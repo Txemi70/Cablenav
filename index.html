@@ -1,0 +1,2001 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>CableNav Pro</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+:root {
+  --am: #FFB300;
+  --am2: #FF8C00;
+  --am-glow: rgba(255,179,0,0.35);
+  --am-dim: rgba(255,179,0,0.1);
+  --bg: #060508;
+  --panel: #0d0b10;
+  --panel2: #13101a;
+  --border: #1e1a28;
+  --border2: #2e2840;
+  --text: #c4b8d8;
+  --text-dim: #4a4060;
+  --verde: #39ff8a;
+  --verde-glow: rgba(57,255,138,0.3);
+  --rojo: #ff3a5c;
+  --azul: #38beff;
+  --azul-glow: rgba(56,190,255,0.3);
+  --cyan: #00e5ff;
+}
+
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;}
+
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Share Tech Mono',monospace;
+  display:flex;flex-direction:column;
+  height:100vh;
+}
+
+body::before{
+  content:'';position:fixed;inset:0;
+  background:
+    radial-gradient(ellipse 80% 40% at 50% -10%, rgba(255,179,0,0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 30% at 100% 100%, rgba(56,190,255,0.04) 0%, transparent 60%);
+  pointer-events:none;z-index:0;
+}
+
+/* ── HEADER ── */
+#header{
+  position:relative;z-index:10;
+  background:rgba(13,11,16,0.97);
+  border-bottom:1px solid var(--border2);
+  padding:10px 14px;
+  display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;
+}
+.brand{font-family:'Orbitron',sans-serif;font-size:20px;font-weight:900;color:var(--am);text-shadow:0 0 20px var(--am-glow);letter-spacing:2px;line-height:1;}
+.brand-sub{font-size:8px;letter-spacing:4px;color:var(--text-dim);margin-top:2px;}
+.sensor-row{display:flex;gap:5px;flex-wrap:nowrap;justify-content:flex-end;}
+.chip{font-size:8px;letter-spacing:1px;padding:2px 6px;border-radius:2px;border:1px solid var(--border2);color:var(--text-dim);display:flex;align-items:center;gap:4px;transition:all 0.3s;}
+.chip .dot{width:5px;height:5px;border-radius:50%;background:var(--border2);}
+.chip.ok{border-color:rgba(57,255,138,0.3);color:var(--verde);}
+.chip.ok .dot{background:var(--verde);box-shadow:0 0 5px var(--verde);}
+.chip.warn{border-color:rgba(255,179,0,0.3);color:var(--am);}
+.chip.warn .dot{background:var(--am);box-shadow:0 0 5px var(--am);animation:blink 1s infinite;}
+.chip.err{border-color:rgba(255,58,92,0.3);color:var(--rojo);}
+.chip.err .dot{background:var(--rojo);}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
+
+/* ── TABS ── */
+#tabs{position:relative;z-index:10;display:flex;border-bottom:1px solid var(--border2);background:rgba(13,11,16,0.9);flex-shrink:0;}
+.tab{flex:1;padding:10px 4px;font-family:'Orbitron',sans-serif;font-size:8px;letter-spacing:1px;color:var(--text-dim);border:none;background:transparent;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s;text-align:center;}
+.tab.activo{color:var(--am);border-bottom-color:var(--am);}
+.tab:hover:not(.activo){color:var(--text);}
+
+/* ── VISTAS ── */
+#vistas{flex:1;overflow:hidden;position:relative;z-index:1;}
+.vista{display:none;height:100%;overflow-y:auto;padding:14px;flex-direction:column;gap:12px;}
+.vista.activa{display:flex;}
+
+/* ── CANVAS PLANO ── */
+#vistaPlano{padding:0;position:relative;}
+#canvasPlano{width:100%;height:100%;display:block;touch-action:none;cursor:crosshair;}
+.plano-overlay{position:absolute;top:8px;left:8px;right:8px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;}
+.plano-info{background:rgba(13,11,16,0.85);border:1px solid var(--border2);border-radius:4px;padding:8px 10px;font-size:10px;line-height:1.8;pointer-events:none;}
+.plano-btns{display:flex;flex-direction:column;gap:6px;pointer-events:all;}
+
+/* ── CARDS ── */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;overflow:hidden;flex-shrink:0;}
+.card-header{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-bottom:1px solid var(--border);background:rgba(255,179,0,0.03);}
+.card-title{font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:2px;color:var(--am);}
+.card-badge{font-size:9px;color:var(--text-dim);background:var(--panel2);padding:2px 7px;border-radius:2px;border:1px solid var(--border);}
+.card-body{padding:12px;}
+
+/* ── DATA GRID ── */
+.dg{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.dg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.dc{display:flex;flex-direction:column;gap:3px;}
+.dc.full{grid-column:1/-1;}
+.dl{font-size:8px;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase;}
+.dv{font-family:'Orbitron',sans-serif;font-size:22px;color:var(--am);text-shadow:0 0 12px var(--am-glow);letter-spacing:1px;line-height:1;}
+.dv.sm{font-size:14px;}
+.dv.xs{font-size:11px;}
+.dv.verde{color:var(--verde);text-shadow:0 0 12px var(--verde-glow);}
+.dv.azul{color:var(--azul);text-shadow:0 0 12px var(--azul-glow);}
+.dv.dim{color:var(--text-dim);text-shadow:none;}
+.du{font-size:9px;color:var(--text-dim);}
+
+/* ── BOTONES ── */
+.btn{padding:13px 16px;border-radius:4px;font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:2px;cursor:pointer;border:none;transition:all 0.2s;width:100%;}
+.btn-am{background:var(--am);color:#000;font-weight:700;box-shadow:0 0 18px var(--am-glow);}
+.btn-am:hover{box-shadow:0 0 30px var(--am-glow);transform:scale(1.01);}
+.btn-am:active{transform:scale(0.98);}
+.btn-verde{background:var(--verde);color:#000;font-weight:700;box-shadow:0 0 15px var(--verde-glow);}
+.btn-rojo-solid{background:var(--rojo);color:#fff;font-weight:700;box-shadow:0 0 15px rgba(255,58,92,0.3);}
+.btn-outline{background:transparent;color:var(--text);border:1px solid var(--border2);}
+.btn-outline:hover{border-color:var(--am);color:var(--am);}
+.btn-rojo{background:transparent;color:var(--rojo);border:1px solid var(--rojo);font-size:9px;padding:9px;}
+.btn-sm{padding:8px 12px;font-size:9px;}
+.btn-row{display:flex;gap:8px;}
+.btn-row .btn{flex:1;}
+
+/* ── BOTÓN INICIAR GRANDE ── */
+.btn-iniciar{
+  padding:20px 16px;border-radius:6px;
+  font-family:'Orbitron',sans-serif;font-size:14px;letter-spacing:3px;
+  cursor:pointer;border:none;transition:all 0.2s;width:100%;
+  background:var(--am);color:#000;font-weight:900;
+  box-shadow:0 0 30px var(--am-glow);
+}
+.btn-iniciar.activo{
+  background:var(--rojo);color:#fff;
+  box-shadow:0 0 30px rgba(255,58,92,0.4);
+  animation:pulseRojo 1.5s infinite;
+}
+@keyframes pulseRojo{0%,100%{box-shadow:0 0 20px rgba(255,58,92,0.4)}50%{box-shadow:0 0 40px rgba(255,58,92,0.7)}}
+
+/* ── ESTADO GRABACIÓN ── */
+.estado-grab{
+  text-align:center;padding:10px;
+  font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:2px;
+  color:var(--text-dim);
+  border:1px solid var(--border2);border-radius:4px;
+}
+.estado-grab.grabando{color:var(--verde);border-color:rgba(57,255,138,0.3);background:rgba(57,255,138,0.04);}
+.estado-grab.calibrando{color:var(--am);border-color:rgba(255,179,0,0.3);background:var(--am-dim);animation:blink 1s infinite;}
+
+/* ── BARRA CALIBRACIÓN ── */
+.cal-wrap{display:flex;flex-direction:column;gap:5px;}
+.cal-bar-bg{background:var(--border2);height:6px;border-radius:3px;overflow:hidden;}
+.cal-bar{height:100%;background:var(--am);border-radius:3px;transition:width 0.3s;box-shadow:0 0 6px var(--am);width:0%;}
+.cal-lbl{font-size:9px;letter-spacing:2px;color:var(--text-dim);text-align:center;}
+
+/* ── BRÚJULA ── */
+.compass-wrap{display:flex;flex-direction:column;align-items:center;gap:8px;}
+.compass{width:120px;height:120px;position:relative;flex-shrink:0;}
+.c-ring{width:100%;height:100%;border-radius:50%;border:2px solid var(--border2);background:radial-gradient(circle,#1a1520 0%,#060508 100%);position:relative;}
+.c-tick{position:absolute;top:4px;left:50%;transform:translateX(-50%);width:2px;height:8px;background:var(--text-dim);border-radius:1px;}
+.c-n{position:absolute;top:14px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--am);font-weight:700;}
+.c-needle{position:absolute;top:50%;left:50%;width:3px;height:52px;margin-left:-1.5px;margin-top:-44px;transform-origin:bottom center;transition:transform 0.12s ease;border-radius:2px 2px 0 0;background:linear-gradient(to bottom,var(--rojo) 50%,var(--text-dim) 50%);}
+.c-dot{position:absolute;top:50%;left:50%;width:8px;height:8px;border-radius:50%;background:var(--am);transform:translate(-50%,-50%);box-shadow:0 0 8px var(--am);}
+.c-deg{font-family:'Orbitron',sans-serif;font-size:30px;color:var(--am);text-shadow:0 0 15px var(--am-glow);}
+.c-txt{font-size:9px;color:var(--text-dim);letter-spacing:3px;}
+
+/* ── FLECHA NAV ── */
+.arrow-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px;}
+.arrow-svg-wrap{width:110px;height:110px;transition:transform 0.15s ease;}
+.nav-dist{font-family:'Orbitron',sans-serif;font-size:44px;color:var(--verde);text-shadow:0 0 20px var(--verde-glow);letter-spacing:2px;}
+.nav-lbl{font-size:10px;letter-spacing:3px;color:var(--text-dim);}
+
+/* ── LISTA PUNTOS ── */
+.punto-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s;}
+.punto-item:last-child{border-bottom:none;}
+.punto-item:hover{background:rgba(255,179,0,0.04);}
+.punto-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;border:2px solid var(--border2);}
+.punto-data{flex:1;}
+.punto-nombre{font-size:12px;color:var(--text);letter-spacing:1px;}
+.punto-meta{font-size:9px;color:var(--text-dim);margin-top:2px;}
+.punto-acciones{display:flex;gap:6px;}
+.ico-btn{width:28px;height:28px;border-radius:4px;background:transparent;border:1px solid var(--border2);color:var(--text-dim);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;transition:all 0.15s;}
+.ico-btn:hover{border-color:var(--am);color:var(--am);}
+
+/* ── CABLE LIST ── */
+.cable-item{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--border);}
+.cable-item:last-child{border-bottom:none;}
+.cable-ruta{font-size:11px;color:var(--text);}
+.cable-dist{font-family:'Orbitron',sans-serif;font-size:16px;color:var(--cyan);text-shadow:0 0 10px rgba(0,229,255,0.3);}
+
+/* ── MODAL ── */
+.modal-bg{position:fixed;inset:0;background:rgba(6,5,8,0.92);z-index:100;display:none;align-items:center;justify-content:center;padding:20px;}
+.modal-bg.open{display:flex;}
+.modal{background:var(--panel2);border:1px solid var(--border2);border-radius:8px;padding:20px;width:100%;max-width:360px;}
+.modal-title{font-family:'Orbitron',sans-serif;font-size:12px;letter-spacing:2px;color:var(--am);margin-bottom:14px;}
+.input-field{width:100%;padding:12px;background:var(--panel);border:1px solid var(--border2);border-radius:4px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:14px;outline:none;margin-bottom:10px;}
+.input-field:focus{border-color:var(--am);}
+.tipo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}
+.tipo-btn{padding:10px 6px;border-radius:4px;background:var(--panel);border:1px solid var(--border2);color:var(--text-dim);cursor:pointer;font-size:18px;text-align:center;transition:all 0.15s;}
+.tipo-btn.sel{border-color:var(--am);background:var(--am-dim);}
+.tipo-lbl{font-size:8px;letter-spacing:1px;display:block;margin-top:4px;color:var(--text-dim);}
+
+/* ── ALERTA ── */
+.alerta{background:rgba(57,255,138,0.08);border:1px solid rgba(57,255,138,0.3);border-radius:4px;padding:10px 12px;font-size:11px;color:var(--verde);display:none;}
+.alerta.show{display:block;}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+/* ── PLANTA BADGE ── */
+.planta-badge{font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:2px;padding:4px 10px;border-radius:3px;background:var(--am-dim);border:1px solid var(--am);color:var(--am);}
+.sep{height:1px;background:var(--border);margin:4px 0;}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <div>
+    <div class="brand">CABLENAV</div>
+    <div class="brand-sub">NAVEGACIÓN · MEDICIÓN · PLANO</div>
+  </div>
+  <div class="sensor-row">
+    <div class="chip" id="chipGPS"><span class="dot"></span>GPS</div>
+    <div class="chip" id="chipIMU"><span class="dot"></span>IMU</div>
+    <div class="chip" id="chipMAG"><span class="dot"></span>MAG</div>
+    <div class="chip" id="chipBAR"><span class="dot"></span>BAR</div>
+  </div>
+</div>
+
+<!-- TABS -->
+<div id="tabs">
+  <button class="tab activo" onclick="verTab('plano')">🗺 PLANO</button>
+  <button class="tab" onclick="verTab('grabar')">⏺ GRABAR</button>
+  <button class="tab" onclick="verTab('navegar')">🧭 NAVEGAR</button>
+  <button class="tab" onclick="verTab('cables')">🔌 CABLES</button>
+  <button class="tab" onclick="verTab('puntos')">📍 PUNTOS</button>
+  <button class="tab" onclick="verTab('resumen')">📊 RESUMEN</button>
+  <button class="tab" onclick="verTab('detector')">🧲 MAG</button>
+</div>
+
+<!-- VISTAS -->
+<div id="vistas">
+
+  <!-- ══ PLANO ══ -->
+  <div class="vista activa" id="vistaPlano">
+    <canvas id="canvasPlano"></canvas>
+    <div class="plano-overlay">
+      <div class="plano-info" id="planoInfo">
+        <span style="color:var(--am);font-family:'Orbitron',sans-serif;font-size:9px;">PLANO EN VIVO</span><br>
+        <span id="planoNumPuntos" style="color:var(--text-dim)">0 puntos</span><br>
+        <span id="planoPosActual" style="color:var(--verde)">–</span>
+      </div>
+      <div class="plano-btns">
+        <button class="btn btn-am btn-sm" onclick="verTab('grabar')">+ PUNTO</button>
+        <button class="btn btn-outline btn-sm" onclick="resetPlano()">RESET</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ GRABAR ══ -->
+  <div class="vista" id="vistaGrabar">
+
+    <!-- BOTÓN ÚNICO INICIAR/PARAR -->
+    <button class="btn-iniciar" id="btnIniciar" onclick="toggleGrabacion()">▶ INICIAR</button>
+
+    <!-- ESTADO -->
+    <div class="estado-grab" id="estadoGrab">PULSA INICIAR PARA COMENZAR</div>
+
+    <!-- CALIBRACIÓN (visible solo mientras calibra) -->
+    <div class="card" id="cardCal" style="display:none">
+      <div class="card-header"><span class="card-title">CALIBRANDO</span><span class="card-badge" id="badgeCal">0%</span></div>
+      <div class="card-body">
+        <div class="cal-wrap">
+          <div class="cal-lbl" id="calLbl">Recogiendo muestras...</div>
+          <div class="cal-bar-bg"><div class="cal-bar" id="calBar"></div></div>
+        </div>
+        <button class="btn btn-outline btn-sm" id="btnForzarCal" onclick="forzarCalibracion()" style="display:none;margin-top:10px">⚡ FORZAR CALIBRACIÓN</button>
+      </div>
+    </div>
+
+    <!-- SENSORES -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">SENSORES</span>
+        <span class="card-badge" id="badgePasos">0 pasos</span>
+      </div>
+      <div class="card-body">
+        <div class="dg" style="margin-bottom:10px">
+          <div class="dc"><div class="dl">Altitud baro</div><div class="dv sm" id="valAlt">–</div><div class="du">metros s.n.m.</div></div>
+          <div class="dc"><div class="dl">Planta estimada</div><div class="dv sm verde" id="valPlanta">–</div><div class="du">relativa al inicio</div></div>
+          <div class="dc"><div class="dl">GPS lat</div><div class="dv xs dim" id="valLat">–</div></div>
+          <div class="dc"><div class="dl">GPS lon</div><div class="dv xs dim" id="valLon">–</div></div>
+        </div>
+        <div class="compass-wrap">
+          <div class="compass">
+            <div class="c-ring">
+              <div class="c-tick"></div><div class="c-n">N</div>
+              <div class="c-needle" id="cNeedle"></div>
+              <div class="c-dot"></div>
+            </div>
+          </div>
+          <div class="c-deg"><span id="cDeg">–</span>°</div>
+          <div class="c-txt" id="cTxt">SIN SEÑAL</div>
+        </div>
+        <div class="sep"></div>
+        <div class="dg" style="margin-top:8px">
+          <div class="dc"><div class="dl">Dist. recorrida</div><div class="dv sm" id="valDist">0.0</div><div class="du">metros</div></div>
+          <div class="dc"><div class="dl">Pos X · Y</div><div class="dv xs" id="valXY">0 · 0</div><div class="du">metros</div></div>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-verde" onclick="abrirModalPunto()">📍 MARCAR PUNTO AQUÍ</button>
+    <button class="btn btn-rojo" onclick="resetTodo()">✕ RESET COMPLETO</button>
+
+  </div>
+
+  <!-- ══ NAVEGAR ══ -->
+  <div class="vista" id="vistaNavegar">
+    <div class="card">
+      <div class="card-header"><span class="card-title">DESTINO</span></div>
+      <div class="card-body">
+        <select id="selDestino" style="width:100%;padding:10px;background:var(--panel2);border:1px solid var(--border2);color:var(--text);font-family:'Share Tech Mono',monospace;font-size:13px;border-radius:4px;outline:none;margin-bottom:8px;">
+          <option value="">— Selecciona punto destino —</option>
+        </select>
+        <button class="btn btn-am" onclick="iniciarNavegacion()">NAVEGAR A ESTE PUNTO</button>
+      </div>
+    </div>
+    <div class="card" id="cardNav" style="display:none">
+      <div class="card-header">
+        <span class="card-title">GUÍA DE NAVEGACIÓN</span>
+        <span class="card-badge planta-badge" id="navPlantaDiff">–</span>
+      </div>
+      <div class="card-body">
+        <div class="arrow-wrap">
+          <div class="arrow-svg-wrap" id="arrowWrap">
+            <svg viewBox="0 0 100 100" width="110" height="110">
+              <defs><filter id="glow2"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+              <polygon points="50,6 82,72 50,56 18,72" fill="#FFB300" filter="url(#glow2)"/>
+              <polygon points="50,94 18,28 50,44 82,28" fill="#1e1a28"/>
+            </svg>
+          </div>
+          <div class="nav-lbl" id="navTxt">APUNTA AL NORTE Y AVANZA</div>
+          <div class="nav-dist"><span id="navDistRest">–</span> <span style="font-size:18px;color:var(--text-dim)">m</span></div>
+        </div>
+        <div class="dg">
+          <div class="dc"><div class="dl">Tu rumbo</div><div class="dv sm" id="navRumboAct">–°</div></div>
+          <div class="dc"><div class="dl">Rumbo objetivo</div><div class="dv sm azul" id="navRumboObj">–°</div></div>
+          <div class="dc"><div class="dl">Recorrido</div><div class="dv sm" id="navRecorrido">0.0</div><div class="du">m</div></div>
+          <div class="dc"><div class="dl">Diferencia alt.</div><div class="dv sm" id="navDiffAlt">–</div><div class="du">metros</div></div>
+        </div>
+        <div class="alerta" id="alertaLlegada">✓ ¡LLEGASTE! El punto debería estar aquí.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ CABLES ══ -->
+  <div class="vista" id="vistaCables">
+    <div class="card">
+      <div class="card-header"><span class="card-title">CALCULAR CABLE</span></div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:8px;">
+        <div style="font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-bottom:2px;">ORIGEN</div>
+        <select id="selCableA" style="width:100%;padding:10px;background:var(--panel2);border:1px solid var(--border2);color:var(--text);font-family:'Share Tech Mono',monospace;font-size:13px;border-radius:4px;outline:none;">
+          <option value="">— Punto A —</option>
+        </select>
+        <div style="font-size:9px;color:var(--text-dim);letter-spacing:2px;">DESTINO</div>
+        <select id="selCableB" style="width:100%;padding:10px;background:var(--panel2);border:1px solid var(--border2);color:var(--text);font-family:'Share Tech Mono',monospace;font-size:13px;border-radius:4px;outline:none;">
+          <option value="">— Punto B —</option>
+        </select>
+        <div style="font-size:9px;color:var(--text-dim);letter-spacing:2px;">HOLGURA %</div>
+        <input type="range" id="holgura" min="5" max="50" value="15" style="width:100%;accent-color:var(--am);" oninput="document.getElementById('holguraVal').textContent=this.value+'%'">
+        <div style="text-align:center;font-size:11px;color:var(--am)" id="holguraVal">15%</div>
+        <button class="btn btn-am" onclick="calcularCable()">CALCULAR METROS</button>
+      </div>
+    </div>
+    <div class="card" id="cardResultCable" style="display:none">
+      <div class="card-header"><span class="card-title">RESULTADO</span></div>
+      <div class="card-body">
+        <div style="text-align:center;margin-bottom:12px;">
+          <div style="font-size:9px;letter-spacing:3px;color:var(--text-dim);margin-bottom:6px;">CABLE NECESARIO</div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:52px;color:var(--cyan);text-shadow:0 0 20px rgba(0,229,255,0.4);line-height:1">
+            <span id="resCableTotal">–</span><span style="font-size:20px;color:var(--text-dim)"> m</span>
+          </div>
+          <div style="font-size:10px;color:var(--text-dim);margin-top:6px;" id="resCableDetalle">–</div>
+        </div>
+        <div class="sep"></div>
+        <button class="btn btn-outline btn-sm" onclick="guardarCable()" style="margin-top:8px">GUARDAR EN LISTA</button>
+      </div>
+    </div>
+    <div class="card" id="cardListaCables">
+      <div class="card-header">
+        <span class="card-title">LISTA DE CABLES</span>
+        <span class="card-badge" id="badgeCables">0</span>
+      </div>
+      <div id="listaCables" style="max-height:340px;overflow-y:auto;"><div style="padding:20px;text-align:center;font-size:10px;color:var(--text-dim)">Sin cables calculados</div></div>
+    </div>
+  </div>
+
+  <!-- ══ PUNTOS ══ -->
+  <div class="vista" id="vistaPuntos">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">PUNTOS GUARDADOS</span>
+        <span class="card-badge" id="badgePuntosTotal">0</span>
+      </div>
+      <div id="listaPuntos"><div style="padding:20px;text-align:center;font-size:10px;color:var(--text-dim)">Sin puntos. Ve a GRABAR y marca puntos.</div></div>
+    </div>
+    <button class="btn btn-rojo" onclick="borrarTodosPuntos()">✕ BORRAR TODOS LOS PUNTOS</button>
+  </div>
+
+  <!-- ══ RESUMEN ══ -->
+  <div class="vista" id="vistaResumen">
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">RESUMEN INSTALACIÓN</span>
+        <button class="btn btn-outline btn-sm" onclick="exportarResumen()" style="padding:4px 10px;width:auto;">📋 COPIAR</button>
+      </div>
+      <div class="card-body" id="resumenBody">
+        <div style="text-align:center;font-size:10px;color:var(--text-dim);padding:20px;">Sin datos. Marca puntos primero.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ DETECTOR ══ -->
+  <div class="vista" id="vistaDetector">
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">DETECTOR MAGNÉTICO</span>
+        <span class="card-badge" id="detEstado">INACTIVO</span>
+      </div>
+      <div class="card-body">
+        <!-- Valor total en grande -->
+        <div style="text-align:center;margin-bottom:14px;">
+          <div style="font-size:9px;letter-spacing:3px;color:var(--text-dim);margin-bottom:4px;">CAMPO TOTAL · µT</div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:60px;line-height:1;text-shadow:0 0 20px var(--am-glow);" id="detTotal">–</div>
+          <div style="font-size:9px;color:var(--text-dim);margin-top:4px;" id="detNivel">–</div>
+        </div>
+        <!-- Barra de nivel -->
+        <div style="margin-bottom:14px;">
+          <div style="background:var(--border2);height:20px;border-radius:4px;overflow:hidden;position:relative;">
+            <div id="detBar" style="height:100%;width:0%;border-radius:4px;transition:width 0.1s,background 0.1s;background:var(--verde);"></div>
+            <!-- Marcas de umbral -->
+            <div style="position:absolute;top:0;bottom:0;left:40%;width:1px;background:rgba(255,179,0,0.5);"></div>
+            <div style="position:absolute;top:0;bottom:0;left:70%;width:1px;background:rgba(255,58,92,0.5);"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--text-dim);margin-top:3px;letter-spacing:1px;">
+            <span>0</span><span style="margin-left:48%">200</span><span>400µT</span>
+          </div>
+        </div>
+        <!-- Ejes X Y Z -->
+        <div class="dg3" style="margin-bottom:12px;">
+          <div class="dc">
+            <div class="dl">EJE X</div>
+            <div class="dv xs" id="detX">–</div>
+            <div class="du">µT</div>
+          </div>
+          <div class="dc">
+            <div class="dl">EJE Y</div>
+            <div class="dv xs" id="detY">–</div>
+            <div class="du">µT</div>
+          </div>
+          <div class="dc">
+            <div class="dl">EJE Z</div>
+            <div class="dv xs" id="detZ">–</div>
+            <div class="du">µT</div>
+          </div>
+        </div>
+        <!-- Variación (diferencia respecto a base) -->
+        <div class="dg" style="margin-bottom:12px;">
+          <div class="dc">
+            <div class="dl">BASE (reposo)</div>
+            <div class="dv xs dim" id="detBase">–</div>
+            <div class="du">µT</div>
+          </div>
+          <div class="dc">
+            <div class="dl">VARIACIÓN</div>
+            <div class="dv xs verde" id="detVar">–</div>
+            <div class="du">µT sobre base</div>
+          </div>
+        </div>
+        <!-- Alerta -->
+        <div class="alerta" id="detAlerta" style="text-align:center;font-size:13px;letter-spacing:2px;">
+          ⚡ CAMPO DETECTADO
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-am" id="btnDetector" onclick="toggleDetector()">▶ ACTIVAR DETECTOR</button>
+    <button class="btn btn-outline btn-sm" onclick="calibrarDetector()">⊙ CALIBRAR BASE (quieto)</button>
+
+  </div>
+
+</div><!-- /vistas -->
+
+<!-- MODAL EDITAR CABLE -->
+<div class="modal-bg" id="modalEditCable">
+  <div class="modal">
+    <div class="modal-title">✏️ EDITAR CABLE</div>
+
+    <div style="font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-bottom:6px;">NOMBRE DEL PUNTO</div>
+    <input class="input-field" id="editCableNombre" placeholder="Nombre del punto" maxlength="40">
+
+    <div style="font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-bottom:6px;">RACK DE ORIGEN</div>
+    <select id="editCableRack" onchange="recalcularEditCable()" style="width:100%;padding:10px;background:var(--panel2);border:1px solid var(--am);color:var(--text);font-family:'Share Tech Mono',monospace;font-size:13px;border-radius:4px;outline:none;margin-bottom:12px;">
+    </select>
+
+    <div style="font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-bottom:6px;">HOLGURA %</div>
+    <input type="range" id="editCableHolgura" min="5" max="50" value="15"
+      style="width:100%;accent-color:var(--am);margin-bottom:4px;"
+      oninput="document.getElementById('editHolguraVal').textContent=this.value+'%';recalcularEditCable()">
+    <div style="text-align:center;font-size:11px;color:var(--am);margin-bottom:12px;" id="editHolguraVal">15%</div>
+
+    <div id="editCableResultado" style="display:none;padding:10px;background:var(--am-dim);border:1px solid var(--am);border-radius:4px;margin-bottom:12px;text-align:center;">
+      <div style="font-size:9px;letter-spacing:2px;color:var(--text-dim);margin-bottom:4px;">CABLE NECESARIO</div>
+      <div style="font-family:'Orbitron',sans-serif;font-size:32px;color:var(--cyan);line-height:1;">
+        <span id="editCableM">–</span><span style="font-size:14px;color:var(--text-dim)"> m</span>
+      </div>
+      <div style="font-size:9px;color:var(--text-dim);margin-top:4px;" id="editCableDetalle">–</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-am" onclick="guardarEditCable()">GUARDAR</button>
+      <button class="btn btn-outline" onclick="cerrarEditCable()">CANCELAR</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PLANTA INICIO -->
+<div class="modal-bg" id="modalPlantaInicio">
+  <div class="modal">
+    <div class="modal-title">📍 ¿EN QUÉ PLANTA ESTÁS?</div>
+    <div style="font-size:10px;color:var(--text-dim);letter-spacing:1px;margin-bottom:12px;">
+      Se usará como referencia para calcular alturas relativas en esta sesión.
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px;" id="plantaInicioGrid"></div>
+    <button class="btn btn-am" onclick="confirmarPlantaInicio()">CONFIRMAR Y COMENZAR</button>
+  </div>
+</div>
+
+<!-- MODAL PUNTO -->
+<div class="modal-bg" id="modalPunto">
+  <div class="modal">
+    <div class="modal-title" id="modalTitulo">📍 NUEVO PUNTO</div>
+    <div class="tipo-grid">
+      <div class="tipo-btn sel" onclick="selTipo(this,'rack')" data-tipo="rack">🖥<span class="tipo-lbl">RACK</span></div>
+      <div class="tipo-btn" onclick="selTipo(this,'puesto')" data-tipo="puesto">💻<span class="tipo-lbl">PUESTO</span></div>
+      <div class="tipo-btn" onclick="selTipo(this,'wifi')" data-tipo="wifi">📶<span class="tipo-lbl">WIFI</span></div>
+      <div class="tipo-btn" onclick="selTipo(this,'agujero')" data-tipo="agujero">⭕<span class="tipo-lbl">AGUJERO</span></div>
+      <div class="tipo-btn" onclick="selTipo(this,'camara')" data-tipo="camara">📷<span class="tipo-lbl">CÁMARA</span></div>
+      <div class="tipo-btn" onclick="selTipo(this,'otro')" data-tipo="otro">📌<span class="tipo-lbl">OTRO</span></div>
+    </div>
+    <input class="input-field" id="inputNombrePunto" placeholder="Nombre del punto" maxlength="40">
+    <div style="font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-bottom:6px;">PLANTA</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;" id="plantaGrid"></div>
+
+    <!-- Selector de rack — solo visible para puntos no-rack -->
+    <div id="seccionRack" style="display:none;margin-bottom:12px;">
+      <div style="font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-bottom:6px;">RACK DE ORIGEN</div>
+      <select id="selRackOrigen" onchange="calcularCableModal()" style="width:100%;padding:10px;background:var(--panel2);border:1px solid var(--am);color:var(--text);font-family:'Share Tech Mono',monospace;font-size:13px;border-radius:4px;outline:none;">
+        <option value="">— Selecciona rack —</option>
+      </select>
+      <!-- Resultado de cable inline -->
+      <div id="modalCableResult" style="display:none;margin-top:10px;padding:10px;background:var(--am-dim);border:1px solid var(--am);border-radius:4px;">
+        <div style="font-size:9px;letter-spacing:2px;color:var(--text-dim);margin-bottom:4px;">CABLE NECESARIO</div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:32px;color:var(--cyan);text-shadow:0 0 15px rgba(0,229,255,0.4);line-height:1;">
+          <span id="modalCableM">–</span><span style="font-size:14px;color:var(--text-dim)"> m</span>
+        </div>
+        <div style="font-size:9px;color:var(--text-dim);margin-top:4px;" id="modalCableDetalle">–</div>
+      </div>
+    </div>
+
+    <div style="font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-bottom:6px;">POSICIÓN ACTUAL</div>
+    <div class="dg3" style="margin-bottom:12px">
+      <div class="dc"><div class="dl">X</div><div class="dv xs" id="modalX">0.0</div><div class="du">m</div></div>
+      <div class="dc"><div class="dl">Y</div><div class="dv xs" id="modalY">0.0</div><div class="du">m</div></div>
+      <div class="dc"><div class="dl">Alt GPS</div><div class="dv xs verde" id="modalAlt">–</div><div class="du">m</div></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-am" onclick="guardarPunto()">GUARDAR</button>
+      <button class="btn btn-outline" onclick="cerrarModal()">CANCELAR</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════
+// ESTADO
+// ══════════════════════════════════════════════════
+const APP = {
+  heading: 0,
+  accel: {x:0,y:0,z:0},
+  altBaro: null,
+  altBase: null,
+  gps: null,
+  posX: 0, posY: 0,
+  pasos: 0,
+  enPaso: false,
+  grabando: false,
+  sensoresActivos: false,
+  calListo: false,
+  calMuestras: [],
+  trayectoria: [{x:0,y:0,alt:null}],
+  navegando: false,
+  navDestino: null,
+  navPosX: 0, navPosY: 0,
+  navPasos: 0,
+  PASO_M: 0.72,
+  // umbral pedómetro — se auto-ajusta
+  umbralAlto: 12.0,
+  umbralBajo: 9.5,
+  tipoSeleccionado: 'rack',
+  plantaSeleccionada: 'PB',
+  plantaInicio: 'PB',
+  _plantaCallback: null,
+  _cableModal: null,
+  puntos: JSON.parse(localStorage.getItem('cnav_puntos')||'[]'),
+  cables: JSON.parse(localStorage.getItem('cnav_cables')||'[]'),
+};
+
+// ══════════════════════════════════════════════════
+// TABS
+// ══════════════════════════════════════════════════
+function verTab(id) {
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    const ids=['plano','grabar','navegar','cables','puntos','resumen','detector'];
+    t.classList.toggle('activo', ids[i]===id);
+  });
+  document.querySelectorAll('.vista').forEach(v=>v.classList.remove('activa'));
+  const vista = document.getElementById('vista'+id.charAt(0).toUpperCase()+id.slice(1));
+  if(vista) vista.classList.add('activa');
+  if(id==='plano') setTimeout(dibujarPlano,50);
+  if(id==='cables'||id==='navegar') actualizarSelectores();
+  if(id==='puntos') renderPuntos();
+  if(id==='resumen') renderResumen();
+}
+
+// ══════════════════════════════════════════════════
+// BOTÓN ÚNICO: INICIAR / PARAR
+// ══════════════════════════════════════════════════
+function toggleGrabacion() {
+  if(!APP.grabando) {
+    if(!APP.sensoresActivos) activarSensores();
+    // Preguntar planta antes de empezar
+    abrirModalPlantaInicio();
+  } else {
+    pararGrabacion();
+  }
+}
+
+function abrirModalPlantaInicio(callback) {
+  const plantas = ['S2','S1','PB','ETP','P1','P2','P3','P4','P5','P6','P7','P8','P9'];
+  const grid = document.getElementById('plantaInicioGrid');
+  const defPlanta = APP.plantaInicio || 'PB';
+  grid.innerHTML = plantas.map(p=>`
+    <div onclick="selPlantaInicio(this,'${p}')" style="
+      padding:8px 12px;border-radius:4px;cursor:pointer;
+      font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:1px;
+      background:var(--panel);border:1px solid var(--border2);color:var(--text-dim);
+      transition:all 0.15s;
+      ${p===defPlanta?'border-color:var(--am);background:var(--am-dim);color:var(--am);':''}"
+    >${p}</div>
+  `).join('');
+  APP.plantaInicio = defPlanta;
+  APP._plantaCallback = callback || null;
+  document.getElementById('modalPlantaInicio').classList.add('open');
+}
+
+function selPlantaInicio(el, planta) {
+  document.querySelectorAll('#plantaInicioGrid div').forEach(b=>{
+    b.style.borderColor='var(--border2)';
+    b.style.background='var(--panel)';
+    b.style.color='var(--text-dim)';
+  });
+  el.style.borderColor='var(--am)';
+  el.style.background='var(--am-dim)';
+  el.style.color='var(--am)';
+  APP.plantaInicio = planta;
+}
+
+function confirmarPlantaInicio() {
+  document.getElementById('modalPlantaInicio').classList.remove('open');
+  if(APP._plantaCallback) {
+    const cb = APP._plantaCallback;
+    APP._plantaCallback = null;
+    cb();
+  } else {
+    empezarGrabacion();
+  }
+}
+
+function empezarGrabacion() {
+  APP.grabando = true;
+  APP.posX = 0; APP.posY = 0;
+  APP.pasos = 0;
+  APP.trayectoria = [{x:0,y:0,alt:APP.altBaro}];
+  if(APP.altBase===null) APP.altBase = APP.altBaro;
+
+  const btn = document.getElementById('btnIniciar');
+  btn.textContent = '⏹ PARAR';
+  btn.classList.add('activo');
+
+  const plantaInfo = APP.plantaInicio ? ` · ${APP.plantaInicio}` : '';
+  const estado = document.getElementById('estadoGrab');
+  if(!APP.calListo) {
+    estado.textContent = 'CALIBRANDO EN MARCHA...' + plantaInfo;
+    estado.className = 'estado-grab calibrando';
+    document.getElementById('cardCal').style.display = 'block';
+  } else {
+    estado.textContent = '● GRABANDO TRAYECTO' + plantaInfo;
+    estado.className = 'estado-grab grabando';
+  }
+}
+
+function pararGrabacion() {
+  APP.grabando = false;
+  const btn = document.getElementById('btnIniciar');
+  btn.textContent = '▶ INICIAR';
+  btn.classList.remove('activo');
+  document.getElementById('estadoGrab').textContent = 'TRAYECTO PAUSADO · PULSA INICIAR PARA CONTINUAR';
+  document.getElementById('estadoGrab').className = 'estado-grab';
+  document.getElementById('cardCal').style.display = 'none';
+}
+
+// ══════════════════════════════════════════════════
+// SENSORES
+// ══════════════════════════════════════════════════
+function activarSensores() {
+  APP.sensoresActivos = true;
+
+  // DeviceMotion
+  const bindMotion = () => {
+    window.addEventListener('devicemotion', onMotion, true);
+    setChip('chipIMU','ok');
+    // Si en 5s no llegan eventos suficientes, forzar calibración
+    setTimeout(()=>{ if(!APP.calListo) forzarCalibracion(); }, 5000);
+  };
+  if(typeof DeviceMotionEvent !== 'undefined') {
+    if(typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission()
+        .then(r => r==='granted' ? bindMotion() : (setChip('chipIMU','err'), forzarCalibracion()))
+        .catch(()=>{ setChip('chipIMU','err'); forzarCalibracion(); });
+    } else {
+      bindMotion();
+    }
+  } else {
+    setChip('chipIMU','err');
+    forzarCalibracion();
+  }
+
+  // DeviceOrientation
+  const bindOri = () => {
+    window.addEventListener('deviceorientationabsolute', onOri, true);
+    window.addEventListener('deviceorientation', onOri, true);
+    setChip('chipMAG','ok');
+  };
+  if(typeof DeviceOrientationEvent !== 'undefined') {
+    if(typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(r => r==='granted' ? bindOri() : setChip('chipMAG','err'))
+        .catch(()=>setChip('chipMAG','err'));
+    } else { bindOri(); }
+  } else { setChip('chipMAG','err'); }
+
+  // Barómetro
+  iniciarBarometro();
+
+  // GPS
+  if(navigator.geolocation) {
+    setChip('chipGPS','warn');
+    navigator.geolocation.watchPosition(
+      pos => {
+        APP.gps = pos.coords;
+        document.getElementById('valLat').textContent = pos.coords.latitude.toFixed(6)+'°';
+        document.getElementById('valLon').textContent = pos.coords.longitude.toFixed(6)+'°';
+        if(pos.coords.altitude && APP.altBaro===null) {
+          APP.altBaro = pos.coords.altitude;
+          if(APP.altBase===null) APP.altBase = APP.altBaro;
+          actualizarDisplayBaro();
+        }
+        setChip('chipGPS','ok');
+      },
+      ()=>setChip('chipGPS','err'),
+      {enableHighAccuracy:true, maximumAge:0, timeout:15000}
+    );
+  } else { setChip('chipGPS','err'); }
+}
+
+function iniciarBarometro() {
+  setChip('chipBAR','warn');
+
+  // Intentar con ambos nombres de la Generic Sensor API
+  const SensorClass = ('Barometer' in window) ? window.Barometer
+                    : ('AmbientPressureSensor' in window) ? window.AmbientPressureSensor
+                    : null;
+
+  if(SensorClass) {
+    try {
+      const ps = new SensorClass({frequency:2});
+      const timeout = setTimeout(()=>barNoDisponible(), 4000);
+      ps.addEventListener('reading', () => {
+        clearTimeout(timeout);
+        recibirPresion(ps.pressure);
+      });
+      ps.addEventListener('error', () => {
+        clearTimeout(timeout);
+        barNoDisponible();
+      });
+      ps.start();
+      return;
+    } catch(e) {}
+  }
+  barNoDisponible();
+}
+
+function barNoDisponible() {
+  setChip('chipBAR','err');
+  document.getElementById('valAlt').textContent = 'vía GPS';
+  document.getElementById('valPlanta').textContent = '±1';
+}
+
+function recibirPresion(p) {
+  APP.altBaro = 44330 * (1 - Math.pow(p/1013.25, 0.1903));
+  if(APP.altBase===null) APP.altBase = APP.altBaro;
+  actualizarDisplayBaro();
+  setChip('chipBAR','ok');
+}
+
+function actualizarDisplayBaro() {
+  if(APP.altBaro===null) return;
+  document.getElementById('valAlt').textContent = APP.altBaro.toFixed(1);
+  if(APP.altBase!==null) {
+    const diff = APP.altBaro - APP.altBase;
+    const planta = Math.round(diff/3.0);
+    document.getElementById('valPlanta').textContent = (planta>=0?'+':'')+planta;
+  }
+}
+
+function setChip(id, estado) {
+  const el = document.getElementById(id);
+  if(el) el.className = 'chip '+estado;
+}
+
+// ══════════════════════════════════════════════════
+// EVENTOS SENSORES
+// ══════════════════════════════════════════════════
+function onOri(e) {
+  let h = 0;
+  if(e.webkitCompassHeading!=null) h = e.webkitCompassHeading;
+  else if(e.alpha!=null) h = (360 - e.alpha + 360) % 360;
+  APP.heading = h;
+  document.getElementById('cNeedle').style.transform = `translateX(-50%) rotate(${h}deg)`;
+  document.getElementById('cDeg').textContent = Math.round(h);
+  document.getElementById('cTxt').textContent = rumboTxt(h);
+  if(APP.navegando) actualizarFlecha(h);
+}
+
+function onMotion(e) {
+  const ag = e.accelerationIncludingGravity;
+  if(!ag) return;
+  APP.accel = {x:ag.x||0, y:ag.y||0, z:ag.z||0};
+
+  // Calibración en paralelo (aunque ya esté grabando)
+  if(!APP.calListo) {
+    const mag = Math.sqrt(ag.x**2+ag.y**2+ag.z**2);
+    APP.calMuestras.push(mag);
+    if(APP.calMuestras.length>100) APP.calMuestras.shift();
+    checkCal();
+  }
+
+  // Pasos siempre que esté activo
+  if(APP.grabando || APP.navegando) detectarPaso(ag);
+}
+
+// ══════════════════════════════════════════════════
+// CALIBRACIÓN (en segundo plano, no bloquea)
+// ══════════════════════════════════════════════════
+function checkCal() {
+  const n = APP.calMuestras.length;
+  const prog = Math.min(100, Math.round((n/30)*100));
+  document.getElementById('calBar').style.width = prog+'%';
+  document.getElementById('badgeCal').textContent = prog+'%';
+
+  if(n < 10) {
+    document.getElementById('calLbl').textContent = 'Recogiendo muestras... '+prog+'%';
+    return;
+  }
+
+  const m = APP.calMuestras.reduce((a,b)=>a+b)/n;
+  const std = Math.sqrt(APP.calMuestras.reduce((a,b)=>a+(b-m)**2,0)/n);
+
+  // Ajustar umbrales dinámicos del pedómetro
+  APP.umbralAlto = m + 2.5;
+  APP.umbralBajo = m - 1.0;
+
+  document.getElementById('calLbl').textContent = `Vibración: ${std.toFixed(2)} · ${n} muestras`;
+
+  // Calibrar siempre al llegar a 30 muestras, sin importar std
+  if(n >= 30) {
+    forzarCalibracion();
+  }
+}
+
+function forzarCalibracion() {
+  if(APP.calListo) return; // evitar llamadas dobles
+  APP.calListo = true;
+  document.getElementById('calLbl').textContent = '✓ CALIBRADO · LISTO';
+  document.getElementById('calBar').style.width = '100%';
+  document.getElementById('calBar').style.background = 'var(--verde)';
+  document.getElementById('btnForzarCal').style.display = 'none';
+  document.getElementById('badgeCal').textContent = '✓';
+
+  // Actualizar estado siempre, esté grabando o no
+  if(APP.grabando) {
+    document.getElementById('estadoGrab').textContent = '● GRABANDO TRAYECTO';
+    document.getElementById('estadoGrab').className = 'estado-grab grabando';
+  } else {
+    document.getElementById('estadoGrab').textContent = 'CALIBRADO · PULSA INICIAR';
+    document.getElementById('estadoGrab').className = 'estado-grab';
+  }
+  setTimeout(()=>{ document.getElementById('cardCal').style.display='none'; }, 2000);
+}
+
+// ══════════════════════════════════════════════════
+// DETECCIÓN DE PASOS (umbral dinámico)
+// ══════════════════════════════════════════════════
+function detectarPaso(ag) {
+  const mag = Math.sqrt(ag.x**2+ag.y**2+ag.z**2);
+  if(!APP.enPaso && mag > APP.umbralAlto) {
+    APP.enPaso = true;
+  } else if(APP.enPaso && mag < APP.umbralBajo) {
+    APP.enPaso = false;
+    procesarPaso();
+  }
+}
+
+function procesarPaso() {
+  const rad = APP.heading * Math.PI/180;
+  const dx = Math.sin(rad)*APP.PASO_M;
+  const dy = Math.cos(rad)*APP.PASO_M;
+
+  if(APP.grabando) {
+    APP.pasos++;
+    APP.posX += dx;
+    APP.posY += dy;
+    const dist = Math.sqrt(APP.posX**2+APP.posY**2);
+    APP.trayectoria.push({x:APP.posX, y:APP.posY, alt:APP.altBaro});
+    document.getElementById('valDist').textContent = dist.toFixed(1);
+    document.getElementById('valXY').textContent = APP.posX.toFixed(1)+' · '+APP.posY.toFixed(1);
+    document.getElementById('badgePasos').textContent = APP.pasos+' pasos';
+    document.getElementById('planoPosActual').textContent = 'X:'+APP.posX.toFixed(1)+' Y:'+APP.posY.toFixed(1);
+    dibujarPlano();
+  }
+
+  if(APP.navegando && APP.navDestino) {
+    APP.navPasos++;
+    APP.navPosX += dx;
+    APP.navPosY += dy;
+    const recorrido = Math.sqrt(APP.navPosX**2+APP.navPosY**2);
+    const restante = Math.max(0, APP.navDestino.distH - recorrido);
+    document.getElementById('navDistRest').textContent = restante.toFixed(1);
+    document.getElementById('navRecorrido').textContent = recorrido.toFixed(1);
+    if(restante < 0.6) document.getElementById('alertaLlegada').classList.add('show');
+  }
+}
+
+// ══════════════════════════════════════════════════
+// MODAL PUNTO
+// ══════════════════════════════════════════════════
+function abrirModalPunto() {
+  document.getElementById('modalX').textContent = APP.posX.toFixed(2);
+  document.getElementById('modalY').textContent = APP.posY.toFixed(2);
+  document.getElementById('modalAlt').textContent = APP.altBaro!==null ? APP.altBaro.toFixed(1) : '–';
+  document.getElementById('inputNombrePunto').value = '';
+  document.getElementById('modalCableResult').style.display = 'none';
+  document.getElementById('seccionRack').style.display = 'none';
+
+  // Generar botones de planta — por defecto la planta de inicio de sesión
+  const plantas = ['S2','S1','PB','ETP','P1','P2','P3','P4','P5','P6','P7','P8','P9'];
+  const grid = document.getElementById('plantaGrid');
+  const defPlanta = APP.plantaInicio || 'PB';
+  APP.plantaSeleccionada = defPlanta;
+  grid.innerHTML = plantas.map(p=>`
+    <div onclick="selPlanta(this,'${p}')" data-planta="${p}" style="
+      padding:6px 10px;border-radius:4px;cursor:pointer;
+      font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:1px;
+      background:var(--panel);border:1px solid var(--border2);color:var(--text-dim);
+      transition:all 0.15s;
+      ${p===defPlanta?'border-color:var(--am);background:var(--am-dim);color:var(--am);':''}"
+    >${p}</div>
+  `).join('');
+
+  // Si no hay racks todavía, forzar tipo rack
+  const hayRacks = APP.puntos.some(p=>p.tipo==='rack');
+  if(!hayRacks) {
+    // Seleccionar rack automáticamente y avisar
+    document.querySelectorAll('.tipo-btn').forEach(b=>b.classList.remove('sel'));
+    document.querySelector('[data-tipo="rack"]').classList.add('sel');
+    APP.tipoSeleccionado = 'rack';
+    document.getElementById('modalTitulo').textContent = '🖥 PRIMERO MARCA UN RACK';
+    document.getElementById('inputNombrePunto').placeholder = 'Nombre del rack (ej: Rack-1 PB)';
+    document.getElementById('seccionRack').style.display = 'none';
+  } else {
+    // Tipo por defecto puesto (no rack)
+    document.querySelectorAll('.tipo-btn').forEach(b=>b.classList.remove('sel'));
+    document.querySelector('[data-tipo="puesto"]').classList.add('sel');
+    APP.tipoSeleccionado = 'puesto';
+    document.getElementById('modalTitulo').textContent = '📍 NUEVO PUNTO';
+    document.getElementById('inputNombrePunto').placeholder = 'Nombre del punto';
+    // Mostrar selector de racks
+    const racks = APP.puntos.filter(p=>p.tipo==='rack');
+    const secRack = document.getElementById('seccionRack');
+    secRack.style.display = 'block';
+    const sel = document.getElementById('selRackOrigen');
+    sel.innerHTML = '<option value="">— Selecciona rack —</option>' +
+      racks.map(r=>`<option value="${r.id}">${r.icono} ${r.nombre} [${r.planta||'?'}]</option>`).join('');
+    if(racks.length === 1) {
+      sel.value = racks[0].id;
+      calcularCableModal();
+    }
+  }
+
+  document.getElementById('modalPunto').classList.add('open');
+}
+
+function selPlanta(el, planta) {
+  document.querySelectorAll('#plantaGrid div').forEach(b=>{
+    b.style.borderColor='var(--border2)';
+    b.style.background='var(--panel)';
+    b.style.color='var(--text-dim)';
+  });
+  el.style.borderColor='var(--am)';
+  el.style.background='var(--am-dim)';
+  el.style.color='var(--am)';
+  APP.plantaSeleccionada = planta;
+  // Recalcular cable si hay rack seleccionado
+  if(APP.tipoSeleccionado !== 'rack') calcularCableModal();
+}
+
+function cerrarModal() {
+  document.getElementById('modalPunto').classList.remove('open');
+}
+
+function selTipo(el, tipo) {
+  document.querySelectorAll('.tipo-btn').forEach(b=>b.classList.remove('sel'));
+  el.classList.add('sel');
+  APP.tipoSeleccionado = tipo;
+
+  const secRack = document.getElementById('seccionRack');
+  if(tipo === 'rack') {
+    secRack.style.display = 'none';
+    document.getElementById('modalTitulo').textContent = '🖥 NUEVO RACK';
+    document.getElementById('inputNombrePunto').placeholder = 'Nombre del rack (ej: Rack-1 PB)';
+  } else {
+    const racks = APP.puntos.filter(p=>p.tipo==='rack');
+    if(racks.length > 0) {
+      secRack.style.display = 'block';
+      document.getElementById('modalTitulo').textContent = '📍 NUEVO PUNTO';
+      document.getElementById('inputNombrePunto').placeholder = 'Nombre del punto';
+      // Poblar selector de racks
+      const sel = document.getElementById('selRackOrigen');
+      sel.innerHTML = '<option value="">— Selecciona rack —</option>' +
+        racks.map(r=>`<option value="${r.id}">${r.icono} ${r.nombre} [${r.planta||'?'}]</option>`).join('');
+      // Auto-seleccionar si solo hay uno
+      if(racks.length === 1) {
+        sel.value = racks[0].id;
+        calcularCableModal();
+      }
+    } else {
+      secRack.style.display = 'none';
+    }
+  }
+}
+
+const ICONOS = {rack:'🖥',puesto:'💻',wifi:'📶',agujero:'⭕',camara:'📷',otro:'📌'};
+
+function calcularCableModal() {
+  const selRack = document.getElementById('selRackOrigen');
+  const rackId = selRack.value;
+  if(!rackId) { document.getElementById('modalCableResult').style.display='none'; return; }
+  const rack = APP.puntos.find(p=>p.id==rackId);
+  if(!rack) return;
+
+  const dX = APP.posX - rack.x;
+  const dY = APP.posY - rack.y;
+  const distH = Math.sqrt(dX*dX + dY*dY);
+
+  const ORDEN_PLANTAS = ['S2','S1','PB','ETP','P1','P2','P3','P4','P5','P6','P7','P8','P9'];
+  const iRack = ORDEN_PLANTAS.indexOf(typeof rack.planta==='string'&&ORDEN_PLANTAS.includes(rack.planta)?rack.planta:'PB');
+  const iPunto = ORDEN_PLANTAS.indexOf(APP.plantaSeleccionada||'PB');
+  const diffPlantas = Math.abs(iPunto - iRack);
+  const dAlt = diffPlantas * 3.0;
+
+  const dist3D = Math.sqrt(distH*distH + dAlt*dAlt);
+  const holgura = 0.15; // 15% por defecto
+  const total = dist3D * (1 + holgura);
+
+  APP._cableModal = {
+    nombreA: rack.nombre, nombreB: '?', // se actualiza al guardar
+    rackId, distH, dAlt, dist3D, total, holgura: 15,
+    plantaInfo: diffPlantas>0 ? `${rack.planta||'?'} → ${APP.plantaSeleccionada} (${diffPlantas} pl.)` : 'misma planta'
+  };
+
+  document.getElementById('modalCableM').textContent = total.toFixed(1);
+  document.getElementById('modalCableDetalle').textContent =
+    `H: ${distH.toFixed(1)}m · V: ${dAlt.toFixed(1)}m · ${APP._cableModal.plantaInfo} · +15% holgura`;
+  document.getElementById('modalCableResult').style.display = 'block';
+}
+
+function guardarPunto() {
+  const nombre = document.getElementById('inputNombrePunto').value.trim();
+  if(!nombre) { document.getElementById('inputNombrePunto').focus(); return; }
+
+  // Si es no-rack, exigir rack seleccionado
+  if(APP.tipoSeleccionado !== 'rack') {
+    const hayRacks = APP.puntos.some(p=>p.tipo==='rack');
+    if(hayRacks && !document.getElementById('selRackOrigen').value) {
+      document.getElementById('selRackOrigen').style.borderColor = 'var(--rojo)';
+      setTimeout(()=>document.getElementById('selRackOrigen').style.borderColor='var(--am)', 2000);
+      return;
+    }
+  }
+
+  const p = {
+    id: Date.now(), nombre,
+    tipo: APP.tipoSeleccionado,
+    icono: ICONOS[APP.tipoSeleccionado]||'📌',
+    planta: APP.plantaSeleccionada,
+    x: APP.posX, y: APP.posY,
+    alt: APP.altBaro,
+    altRel: APP.altBase!==null && APP.altBaro!==null ? APP.altBaro-APP.altBase : null,
+    gps: APP.gps ? {lat:APP.gps.latitude, lon:APP.gps.longitude} : null,
+    ts: new Date().toLocaleTimeString('es-ES')
+  };
+  APP.puntos.push(p);
+
+  // Guardar cable automáticamente si hay cálculo
+  if(APP._cableModal && APP.tipoSeleccionado !== 'rack') {
+    APP._cableModal.nombreB = nombre;
+    APP.cables.push({...APP._cableModal, ts: new Date().toLocaleTimeString('es-ES')});
+    APP._cableModal = null;
+  }
+
+  guardarLS();
+  cerrarModal();
+  renderPuntos();
+  actualizarSelectores();
+  dibujarPlano();
+  document.getElementById('planoNumPuntos').textContent = APP.puntos.length+' puntos';
+  renderCables();
+}
+
+// ══════════════════════════════════════════════════
+// NAVEGACIÓN
+// ══════════════════════════════════════════════════
+function iniciarNavegacion() {
+  const sel = document.getElementById('selDestino').value;
+  if(!sel) return;
+  const dest = APP.puntos.find(p=>p.id==sel);
+  if(!dest) return;
+
+  const dX = dest.x - APP.posX;
+  const dY = dest.y - APP.posY;
+  const distH = Math.sqrt(dX**2+dY**2);
+  const rumbo = ((Math.atan2(dX,dY)*180/Math.PI)+360)%360;
+
+  APP.navDestino = {dest, distH, rumbo, dX, dY};
+  APP.navegando = true;
+  APP.navPosX = 0; APP.navPosY = 0; APP.navPasos = 0;
+
+  document.getElementById('navRumboObj').textContent = Math.round(rumbo)+'°';
+  document.getElementById('navDistRest').textContent = distH.toFixed(1);
+
+  // Diferencia de planta: planta actual (de inicio de sesión) vs planta destino
+  const ORDEN_PLANTAS = ['S2','S1','PB','ETP','P1','P2','P3','P4','P5','P6','P7','P8','P9'];
+  // Sanitizar — descartar valores inválidos (null, 0, undefined, número)
+  const sanitizar = v => (typeof v === 'string' && ORDEN_PLANTAS.includes(v)) ? v : 'PB';
+  const plantaActual = sanitizar(APP.plantaInicio);
+  const plantaDest = sanitizar(dest.planta);
+  const iOrigen = ORDEN_PLANTAS.indexOf(plantaActual);
+  const iDest = ORDEN_PLANTAS.indexOf(plantaDest);
+  const diffPlantas = iDest - iOrigen;
+  const diffAbs = Math.abs(diffPlantas);
+
+  let plantaTxt;
+  if(diffPlantas === 0) plantaTxt = 'MISMA PLANTA';
+  else if(diffPlantas > 0) plantaTxt = `▲ ${diffAbs} PLANTA${diffAbs>1?'S':''} (${plantaDest})`;
+  else plantaTxt = `▼ ${diffAbs} PLANTA${diffAbs>1?'S':''} (${plantaDest})`;
+
+  document.getElementById('navPlantaDiff').textContent = plantaTxt;
+  document.getElementById('navDiffAlt').textContent = plantaDest;
+  document.getElementById('alertaLlegada').classList.remove('show');
+  document.getElementById('cardNav').style.display='block';
+
+  // Activar sensores si no están activos
+  if(!APP.sensoresActivos) activarSensores();
+}
+
+function actualizarFlecha(h) {
+  if(!APP.navDestino) return;
+  const diff = angleDiff(APP.navDestino.rumbo, h);
+  document.getElementById('arrowWrap').style.transform = `rotate(${diff}deg)`;
+  document.getElementById('navRumboAct').textContent = Math.round(h)+'°';
+  const ad = Math.abs(diff);
+  let txt = '';
+  if(ad<12) txt='→ RECTO';
+  else if(diff>0) txt=`GIRA ${Math.round(diff)}° DERECHA →`;
+  else txt=`← GIRA ${Math.round(-diff)}° IZQUIERDA`;
+  document.getElementById('navTxt').textContent = txt;
+}
+
+// ══════════════════════════════════════════════════
+// CÁLCULO DE CABLE
+// ══════════════════════════════════════════════════
+let ultimoCableCalc = null;
+
+function calcularCable() {
+  const idA = document.getElementById('selCableA').value;
+  const idB = document.getElementById('selCableB').value;
+  if(!idA||!idB||idA===idB) return;
+  const pA = APP.puntos.find(p=>p.id==idA);
+  const pB = APP.puntos.find(p=>p.id==idB);
+  if(!pA||!pB) return;
+  const dX = pB.x - pA.x;
+  const dY = pB.y - pA.y;
+  const distH = Math.sqrt(dX**2+dY**2);
+
+  // Calcular diferencia vertical por planta manual (3m por planta)
+  const ORDEN_PLANTAS = ['S2','S1','PB','ETP','P1','P2','P3','P4','P5','P6','P7','P8','P9'];
+  const iA = ORDEN_PLANTAS.indexOf(typeof pA.planta==='string'&&ORDEN_PLANTAS.includes(pA.planta)?pA.planta:'PB');
+  const iB = ORDEN_PLANTAS.indexOf(typeof pB.planta==='string'&&ORDEN_PLANTAS.includes(pB.planta)?pB.planta:'PB');
+  const diffPlantas = Math.abs(iB - iA);
+  const dAlt = diffPlantas * 3.0; // 3m por planta
+
+  const dist3D = Math.sqrt(distH**2+dAlt**2);
+  const holgura = parseInt(document.getElementById('holgura').value)/100;
+  const total = dist3D*(1+holgura);
+  const plantaInfo = diffPlantas>0 ? `${pA.planta||'?'} → ${pB.planta||'?'} (${diffPlantas} planta${diffPlantas>1?'s':''})` : 'misma planta';
+  ultimoCableCalc = {nombreA:pA.nombre, nombreB:pB.nombre, distH, dAlt, dist3D, total, holgura:parseInt(document.getElementById('holgura').value)};
+  document.getElementById('resCableTotal').textContent = total.toFixed(1);
+  document.getElementById('resCableDetalle').textContent = `Horizontal: ${distH.toFixed(1)}m · Vertical: ${dAlt.toFixed(1)}m · ${plantaInfo} · 3D: ${dist3D.toFixed(1)}m · +${ultimoCableCalc.holgura}% holgura`;
+  document.getElementById('cardResultCable').style.display='block';
+}
+
+function guardarCable() {
+  if(!ultimoCableCalc) return;
+  APP.cables.push({...ultimoCableCalc, ts: new Date().toLocaleTimeString('es-ES')});
+  guardarLS();
+  renderCables();
+}
+
+function renderCables() {
+  const lista = document.getElementById('listaCables');
+  document.getElementById('badgeCables').textContent = APP.cables.length;
+  if(APP.cables.length===0) { lista.innerHTML='<div style="padding:20px;text-align:center;font-size:10px;color:var(--text-dim)">Sin cables calculados</div>'; return; }
+  lista.innerHTML = APP.cables.map((c,i)=>`
+    <div class="cable-item">
+      <div style="flex:1">
+        <div class="cable-ruta">${c.nombreA} → ${c.nombreB}</div>
+        <div style="font-size:9px;color:var(--text-dim)">H:${c.distH.toFixed(1)}m · V:${c.dAlt.toFixed(1)}m · +${c.holgura}%</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="cable-dist">${c.total.toFixed(1)}m</div>
+        <button class="ico-btn" onclick="abrirEditCable(${i})" title="Editar">✏️</button>
+        <button class="ico-btn" onclick="borrarCable(${i})" title="Borrar">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function borrarCable(i) {
+  APP.cables.splice(i,1);
+  guardarLS();
+  renderCables();
+}
+
+// ── EDITAR CABLE ──
+let _editCableIdx = null;
+
+function abrirEditCable(i) {
+  _editCableIdx = i;
+  const c = APP.cables[i];
+
+  document.getElementById('editCableNombre').value = c.nombreB;
+  document.getElementById('editCableHolgura').value = c.holgura || 15;
+  document.getElementById('editHolguraVal').textContent = (c.holgura||15)+'%';
+
+  // Poblar selector de racks
+  const racks = APP.puntos.filter(p=>p.tipo==='rack');
+  const sel = document.getElementById('editCableRack');
+  sel.innerHTML = '<option value="">— Sin rack —</option>' +
+    racks.map(r=>`<option value="${r.id}" ${r.nombre===c.nombreA?'selected':''}>${r.icono} ${r.nombre} [${r.planta||'?'}]</option>`).join('');
+
+  recalcularEditCable();
+  document.getElementById('modalEditCable').classList.add('open');
+}
+
+function recalcularEditCable() {
+  const rackId = document.getElementById('editCableRack').value;
+  const rack = APP.puntos.find(p=>p.id==rackId);
+  if(!rack) { document.getElementById('editCableResultado').style.display='none'; return; }
+
+  // Buscar el punto destino por su nombre actual en el cable
+  const c = APP.cables[_editCableIdx];
+  const punto = APP.puntos.find(p=>p.nombre===c.nombreB);
+  if(!punto) { document.getElementById('editCableResultado').style.display='none'; return; }
+
+  const dX = punto.x - rack.x;
+  const dY = punto.y - rack.y;
+  const distH = Math.sqrt(dX*dX + dY*dY);
+  const ORDEN_PLANTAS = ['S2','S1','PB','ETP','P1','P2','P3','P4','P5','P6','P7','P8','P9'];
+  const iR = ORDEN_PLANTAS.indexOf(typeof rack.planta==='string'&&ORDEN_PLANTAS.includes(rack.planta)?rack.planta:'PB');
+  const iP = ORDEN_PLANTAS.indexOf(typeof punto.planta==='string'&&ORDEN_PLANTAS.includes(punto.planta)?punto.planta:'PB');
+  const diffPlantas = Math.abs(iP - iR);
+  const dAlt = diffPlantas * 3.0;
+  const dist3D = Math.sqrt(distH*distH + dAlt*dAlt);
+  const holgura = parseInt(document.getElementById('editCableHolgura').value) / 100;
+  const total = dist3D * (1 + holgura);
+
+  document._editCableCalc = { rack, punto, distH, dAlt, dist3D, total, holgura: parseInt(document.getElementById('editCableHolgura').value) };
+
+  document.getElementById('editCableM').textContent = total.toFixed(1);
+  const plantaInfo = diffPlantas>0 ? `${rack.planta||'?'} → ${punto.planta||'?'} (${diffPlantas} pl.)` : 'misma planta';
+  document.getElementById('editCableDetalle').textContent =
+    `H:${distH.toFixed(1)}m · V:${dAlt.toFixed(1)}m · ${plantaInfo} · +${parseInt(document.getElementById('editCableHolgura').value)}%`;
+  document.getElementById('editCableResultado').style.display = 'block';
+}
+
+function guardarEditCable() {
+  if(_editCableIdx === null) return;
+  const nuevoNombre = document.getElementById('editCableNombre').value.trim();
+  if(!nuevoNombre) { document.getElementById('editCableNombre').focus(); return; }
+
+  const c = APP.cables[_editCableIdx];
+  const calc = document._editCableCalc;
+
+  // Actualizar nombre del punto si cambió
+  if(nuevoNombre !== c.nombreB) {
+    const punto = APP.puntos.find(p=>p.nombre===c.nombreB);
+    if(punto) punto.nombre = nuevoNombre;
+  }
+
+  if(calc) {
+    APP.cables[_editCableIdx] = {
+      ...c,
+      nombreA: calc.rack.nombre,
+      nombreB: nuevoNombre,
+      distH: calc.distH,
+      dAlt: calc.dAlt,
+      dist3D: calc.dist3D,
+      total: calc.total,
+      holgura: calc.holgura,
+      rackId: calc.rack.id
+    };
+  } else {
+    APP.cables[_editCableIdx].nombreB = nuevoNombre;
+  }
+
+  guardarLS();
+  cerrarEditCable();
+  renderCables();
+  renderPuntos();
+  actualizarSelectores();
+  dibujarPlano();
+}
+
+function cerrarEditCable() {
+  document.getElementById('modalEditCable').classList.remove('open');
+  _editCableIdx = null;
+  document._editCableCalc = null;
+}
+
+// ══════════════════════════════════════════════════
+// LISTA DE PUNTOS
+// ══════════════════════════════════════════════════
+function renderPuntos() {
+  const lista = document.getElementById('listaPuntos');
+  document.getElementById('badgePuntosTotal').textContent = APP.puntos.length;
+  if(APP.puntos.length===0) { lista.innerHTML='<div style="padding:20px;text-align:center;font-size:10px;color:var(--text-dim)">Sin puntos. Ve a GRABAR y marca puntos.</div>'; return; }
+  lista.innerHTML = APP.puntos.map(p=>`
+    <div class="punto-item">
+      <div class="punto-icon" style="font-size:16px">${p.icono}</div>
+      <div class="punto-data">
+        <div class="punto-nombre">${p.icono} ${p.nombre} <span style="font-family:'Orbitron',sans-serif;font-size:9px;color:var(--am);background:var(--am-dim);padding:1px 5px;border-radius:2px;margin-left:4px;">${p.planta||'?'}</span></div>
+        <div class="punto-meta">
+          X:${p.x.toFixed(1)} Y:${p.y.toFixed(1)}
+          ${p.alt!==null?'· Alt GPS:'+p.alt.toFixed(0)+'m':''}
+          ${p.altRel!==null?'· '+(p.altRel>=0?'+':'')+p.altRel.toFixed(1)+'m rel':''}
+          · ${p.ts}
+        </div>
+      </div>
+      <div class="punto-acciones">
+        <button class="ico-btn" onclick="navAPoint(${p.id})" title="Navegar">🧭</button>
+        <button class="ico-btn" onclick="borrarPunto(${p.id})" title="Borrar">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function navAPoint(id) {
+  const navegarAhora = () => {
+    verTab('navegar');
+    setTimeout(()=>{
+      document.getElementById('selDestino').value = id;
+      iniciarNavegacion();
+    }, 50);
+  };
+  // Preguntar planta siempre antes de navegar
+  abrirModalPlantaInicio(navegarAhora);
+}
+
+function borrarPunto(id) {
+  const p = APP.puntos.find(x=>x.id==id);
+  if(!p) return;
+  // Borrar cables asociados (donde el punto es origen o destino)
+  APP.cables = APP.cables.filter(c => c.nombreA !== p.nombre && c.nombreB !== p.nombre);
+  // Si era un rack, borrar también los cables de todos sus puntos destino que apuntaban a él
+  APP.puntos = APP.puntos.filter(x=>x.id!=id);
+  guardarLS();
+  renderPuntos();
+  renderCables();
+  actualizarSelectores();
+  dibujarPlano();
+}
+
+function borrarTodosPuntos() {
+  if(!confirm('¿Borrar todos los puntos y cables?')) return;
+  APP.puntos = [];
+  APP.cables = [];
+  guardarLS();
+  renderPuntos();
+  renderCables();
+  actualizarSelectores();
+  dibujarPlano();
+}
+
+function actualizarSelectores() {
+  const opts = '<option value="">–</option>'+APP.puntos.map(p=>`<option value="${p.id}">${p.icono} ${p.nombre} [${p.planta||'?'}]</option>`).join('');
+  ['selDestino','selCableA','selCableB'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.innerHTML = opts;
+  });
+}
+
+// ══════════════════════════════════════════════════
+// PLANO CANVAS con zoom/pan
+// ══════════════════════════════════════════════════
+const PLANO = { scale: 1, offX: 0, offY: 0, minScale: 0.2, maxScale: 10 };
+let _touch = { dist: 0, midX: 0, midY: 0, panX: 0, panY: 0, dragging: false };
+
+function initPlanoGestures() {
+  const canvas = document.getElementById('canvasPlano');
+  if(!canvas || canvas._gesturesInit) return;
+  canvas._gesturesInit = true;
+
+  // Touch pinch-zoom + pan
+  canvas.addEventListener('touchstart', e=>{
+    if(e.touches.length === 2) {
+      const dx = e.touches[1].clientX - e.touches[0].clientX;
+      const dy = e.touches[1].clientY - e.touches[0].clientY;
+      _touch.dist = Math.sqrt(dx*dx + dy*dy);
+      _touch.midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      _touch.midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      _touch.dragging = false;
+    } else if(e.touches.length === 1) {
+      _touch.panX = e.touches[0].clientX;
+      _touch.panY = e.touches[0].clientY;
+      _touch.dragging = true;
+    }
+  }, {passive:true});
+
+  canvas.addEventListener('touchmove', e=>{
+    e.preventDefault();
+    if(e.touches.length === 2) {
+      _touch.dragging = false;
+      const dx = e.touches[1].clientX - e.touches[0].clientX;
+      const dy = e.touches[1].clientY - e.touches[0].clientY;
+      const newDist = Math.sqrt(dx*dx + dy*dy);
+      const ratio = newDist / _touch.dist;
+      const newScale = Math.min(PLANO.maxScale, Math.max(PLANO.minScale, PLANO.scale * ratio));
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const rect = canvas.getBoundingClientRect();
+      const cx = midX - rect.left, cy = midY - rect.top;
+      PLANO.offX = cx - (cx - PLANO.offX) * (newScale / PLANO.scale);
+      PLANO.offY = cy - (cy - PLANO.offY) * (newScale / PLANO.scale);
+      PLANO.scale = newScale;
+      _touch.dist = newDist;
+      dibujarPlano();
+    } else if(e.touches.length === 1 && _touch.dragging) {
+      const dx = e.touches[0].clientX - _touch.panX;
+      const dy = e.touches[0].clientY - _touch.panY;
+      PLANO.offX += dx; PLANO.offY += dy;
+      _touch.panX = e.touches[0].clientX;
+      _touch.panY = e.touches[0].clientY;
+      dibujarPlano();
+    }
+  }, {passive:false});
+
+  canvas.addEventListener('touchend', ()=>{ _touch.dragging = false; }, {passive:true});
+
+  // Doble tap para resetear zoom
+  let lastTap = 0;
+  canvas.addEventListener('touchend', e=>{
+    const now = Date.now();
+    if(now - lastTap < 300) { PLANO.scale=1; PLANO.offX=0; PLANO.offY=0; dibujarPlano(); }
+    lastTap = now;
+  }, {passive:true});
+}
+
+function dibujarPlano() {
+  const canvas = document.getElementById('canvasPlano');
+  if(!canvas) return;
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+  if(!W||!H) return;
+  canvas.width = W; canvas.height = H;
+  initPlanoGestures();
+
+  // Actualizar info del plano
+  const racks = APP.puntos.filter(p=>p.tipo==='rack').length;
+  const puntos = APP.puntos.filter(p=>p.tipo!=='rack').length;
+  document.getElementById('planoNumPuntos').textContent =
+    `${racks} rack${racks!==1?'s':''} · ${puntos} punto${puntos!==1?'s':''}`;
+  document.getElementById('planoPosActual').textContent =
+    APP.grabando ? `X:${APP.posX.toFixed(1)} Y:${APP.posY.toFixed(1)}` : '–';
+
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#060508';
+  ctx.fillRect(0,0,W,H);
+
+  ctx.save();
+  ctx.translate(PLANO.offX, PLANO.offY);
+  ctx.scale(PLANO.scale, PLANO.scale);
+
+  // Calcular bounds de todos los puntos
+  const allX = APP.puntos.length ? APP.puntos.map(p=>p.x) : [0];
+  const allY = APP.puntos.length ? APP.puntos.map(p=>p.y) : [0];
+  const minX=Math.min(...allX), maxX=Math.max(...allX);
+  const minY=Math.min(...allY), maxY=Math.max(...allY);
+  const rX=maxX-minX||10, rY=maxY-minY||10;
+  const pad=60;
+  const baseScale = Math.min((W-pad*2)/rX, (H-pad*2)/rY, 30);
+  const cx=W/2, cy=H/2;
+  const toS=(x,y)=>({
+    sx: cx + (x-(minX+maxX)/2)*baseScale,
+    sy: cy - (y-(minY+maxY)/2)*baseScale
+  });
+
+  // Grid
+  const gs = 30;
+  ctx.strokeStyle='rgba(255,179,0,0.05)'; ctx.lineWidth=1/PLANO.scale;
+  for(let x=-W;x<W*2;x+=gs){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(let y=-H;y<H*2;y+=gs){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+
+  // Cables
+  APP.cables.forEach(c=>{
+    const pA=APP.puntos.find(p=>p.nombre===c.nombreA);
+    const pB=APP.puntos.find(p=>p.nombre===c.nombreB);
+    if(!pA||!pB) return;
+    const a=toS(pA.x,pA.y), b=toS(pB.x,pB.y);
+    ctx.beginPath();ctx.strokeStyle='rgba(0,229,255,0.4)';ctx.lineWidth=1.5/PLANO.scale;ctx.setLineDash([3/PLANO.scale,6/PLANO.scale]);
+    ctx.moveTo(a.sx,a.sy);ctx.lineTo(b.sx,b.sy);ctx.stroke();ctx.setLineDash([]);
+    const mx=(a.sx+b.sx)/2, my=(a.sy+b.sy)/2;
+    ctx.fillStyle='rgba(0,229,255,0.8)';
+    ctx.font=`${9/PLANO.scale}px Share Tech Mono,monospace`;
+    ctx.textAlign='center'; ctx.textBaseline='bottom';
+    ctx.fillText(c.total.toFixed(1)+'m',mx,my-2/PLANO.scale);
+  });
+
+  // Posición actual
+  const cur=toS(APP.posX,APP.posY);
+  ctx.beginPath();ctx.arc(cur.sx,cur.sy,7/PLANO.scale,0,Math.PI*2);ctx.fillStyle='rgba(255,179,0,0.3)';ctx.fill();
+  ctx.beginPath();ctx.arc(cur.sx,cur.sy,4/PLANO.scale,0,Math.PI*2);ctx.fillStyle='#FFB300';ctx.shadowColor='#FFB300';ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0;
+  const hr=APP.heading*Math.PI/180;
+  ctx.beginPath();ctx.strokeStyle='rgba(255,179,0,0.7)';ctx.lineWidth=2/PLANO.scale;
+  ctx.moveTo(cur.sx,cur.sy);ctx.lineTo(cur.sx+Math.sin(hr)*20/PLANO.scale,cur.sy-Math.cos(hr)*20/PLANO.scale);ctx.stroke();
+
+  // Puntos
+  APP.puntos.forEach(p=>{
+    const s=toS(p.x,p.y);
+    const r = p.tipo==='rack' ? 10/PLANO.scale : 8/PLANO.scale;
+    ctx.beginPath();ctx.arc(s.sx,s.sy,r,0,Math.PI*2);
+    ctx.fillStyle = p.tipo==='rack' ? 'rgba(255,179,0,0.2)' : 'rgba(57,255,138,0.15)';
+    ctx.fill();
+    ctx.strokeStyle = p.tipo==='rack' ? 'var(--am)' : '#39ff8a';
+    ctx.lineWidth=1.5/PLANO.scale; ctx.stroke();
+    ctx.font=`${11/PLANO.scale}px serif`;ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(p.icono,s.sx,s.sy);
+    ctx.font=`${9/PLANO.scale}px Share Tech Mono,monospace`;
+    ctx.fillStyle= p.tipo==='rack' ? 'var(--am)' : 'rgba(196,184,216,0.9)';
+    ctx.textAlign='left';ctx.textBaseline='top';
+    ctx.fillText(p.nombre,s.sx+r+2,s.sy-6/PLANO.scale);
+    ctx.fillStyle='rgba(255,179,0,0.5)';
+    ctx.fillText(`[${p.planta||'?'}]`,s.sx+r+2,s.sy+4/PLANO.scale);
+  });
+
+  ctx.restore();
+
+  // Info fija (fuera del transform)
+  ctx.fillStyle='rgba(255,179,0,0.4)';
+  ctx.font='bold 10px Orbitron,monospace';
+  ctx.textAlign='left'; ctx.textBaseline='top';
+  ctx.fillText(`×${PLANO.scale.toFixed(1)}  doble tap=reset zoom`, 8, 8);
+}
+
+// ══════════════════════════════════════════════════
+// RESUMEN
+// ══════════════════════════════════════════════════
+function renderResumen() {
+  const body = document.getElementById('resumenBody');
+  const racks = APP.puntos.filter(p=>p.tipo==='rack');
+  const noRacks = APP.puntos.filter(p=>p.tipo!=='rack');
+
+  if(APP.puntos.length === 0 && APP.cables.length === 0) {
+    body.innerHTML = '<div style="text-align:center;font-size:10px;color:var(--text-dim);padding:20px;">Sin datos. Marca puntos primero.</div>';
+    return;
+  }
+
+  let totalMetros = 0;
+  let html = '';
+
+  // ── Por rack ──
+  racks.forEach(rack => {
+    const cablesRack = APP.cables.filter(c => c.nombreA === rack.nombre || c.nombreB === rack.nombre);
+    const metrosRack = cablesRack.reduce((s,c)=>s+c.total,0);
+    totalMetros += metrosRack;
+
+    const desglose = {};
+    cablesRack.forEach(c=>{
+      const nombrePunto = c.nombreA === rack.nombre ? c.nombreB : c.nombreA;
+      const punto = APP.puntos.find(p=>p.nombre===nombrePunto);
+      const tipo = punto ? punto.tipo : 'otro';
+      if(!desglose[tipo]) desglose[tipo] = {count:0, metros:0};
+      desglose[tipo].count++;
+      desglose[tipo].metros += c.total;
+    });
+
+    html += `
+      <div style="margin-bottom:14px;padding:10px;background:var(--panel2);border:1px solid var(--border2);border-radius:4px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-family:'Orbitron',sans-serif;font-size:10px;color:var(--am);letter-spacing:2px;">🖥 ${rack.nombre} <span style="font-size:8px;color:var(--text-dim)">[${rack.planta||'?'}]</span></div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:14px;color:var(--cyan);">${metrosRack.toFixed(1)}m</div>
+        </div>
+        <div style="font-size:9px;color:var(--text-dim);margin-bottom:6px;">${cablesRack.length} punto${cablesRack.length!==1?'s':''} conectado${cablesRack.length!==1?'s':''}</div>
+        ${Object.entries(desglose).map(([tipo,d])=>`
+          <div style="display:flex;justify-content:space-between;font-size:9px;padding:3px 0;border-bottom:1px solid var(--border);">
+            <span style="color:var(--text)">${ICONOS[tipo]||'📌'} ${tipo} ×${d.count}</span>
+            <span style="color:var(--verde)">${d.metros.toFixed(1)} m</span>
+          </div>
+        `).join('')}
+        ${cablesRack.map(c=>{
+          const nombrePunto = c.nombreA===rack.nombre ? c.nombreB : c.nombreA;
+          return `<div style="display:flex;justify-content:space-between;font-size:8px;padding:2px 6px;color:var(--text-dim);">
+            <span>↳ ${nombrePunto}</span>
+            <span style="color:var(--text)">${c.total.toFixed(1)}m</span>
+          </div>`;
+        }).join('')}
+      </div>
+    `;
+  });
+
+  // ── Cables entre puntos (sin rack) ──
+  const cablesIdsConRack = new Set();
+  racks.forEach(rack=>{
+    APP.cables.forEach((c,i)=>{
+      if(c.nombreA===rack.nombre||c.nombreB===rack.nombre) cablesIdsConRack.add(i);
+    });
+  });
+  const cablesSinRack = APP.cables.filter((_,i)=>!cablesIdsConRack.has(i));
+
+  if(cablesSinRack.length > 0) {
+    const metrosSinRack = cablesSinRack.reduce((s,c)=>s+c.total,0);
+    totalMetros += metrosSinRack;
+    html += `
+      <div style="margin-bottom:14px;padding:10px;background:var(--panel2);border:1px solid var(--azul);border-radius:4px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-family:'Orbitron',sans-serif;font-size:10px;color:var(--azul);letter-spacing:2px;">🔌 CABLES DIRECTOS</div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:14px;color:var(--cyan);">${metrosSinRack.toFixed(1)}m</div>
+        </div>
+        <div style="font-size:9px;color:var(--text-dim);margin-bottom:6px;">${cablesSinRack.length} cable${cablesSinRack.length!==1?'s':''} punto a punto</div>
+        ${cablesSinRack.map(c=>`
+          <div style="display:flex;justify-content:space-between;font-size:8px;padding:2px 6px;color:var(--text-dim);">
+            <span>${c.nombreA} → ${c.nombreB}</span>
+            <span style="color:var(--text)">${c.total.toFixed(1)}m</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  // ── Puntos sin ningún cable ──
+  const sinCable = noRacks.filter(p => !APP.cables.some(c=>c.nombreA===p.nombre||c.nombreB===p.nombre));
+  if(sinCable.length > 0) {
+    html += `<div style="margin-bottom:14px;padding:8px 10px;background:rgba(255,58,92,0.06);border:1px solid rgba(255,58,92,0.2);border-radius:4px;">
+      <div style="font-size:9px;color:var(--rojo);letter-spacing:2px;margin-bottom:4px;">⚠ SIN CABLE ASIGNADO</div>
+      ${sinCable.map(p=>`<div style="font-size:9px;color:var(--text-dim);padding:2px 0;">${p.icono} ${p.nombre} [${p.planta||'?'}]</div>`).join('')}
+    </div>`;
+  }
+
+  // ── Totales ──
+  const totalCables = APP.cables.length;
+  html += `
+    <div style="padding:12px;background:rgba(255,179,0,0.06);border:1px solid var(--am);border-radius:4px;">
+      <div style="font-family:'Orbitron',sans-serif;font-size:9px;color:var(--am);letter-spacing:2px;margin-bottom:8px;">TOTALES INSTALACIÓN</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:10px;color:var(--text-dim)">Racks</span>
+        <span style="font-family:'Orbitron',sans-serif;font-size:12px;color:var(--am)">${racks.length}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:10px;color:var(--text-dim)">Puntos</span>
+        <span style="font-family:'Orbitron',sans-serif;font-size:12px;color:var(--am)">${noRacks.length}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:10px;color:var(--text-dim)">Cables</span>
+        <span style="font-family:'Orbitron',sans-serif;font-size:12px;color:var(--am)">${totalCables}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span style="font-size:10px;color:var(--text-dim)">Cable total</span>
+        <span style="font-family:'Orbitron',sans-serif;font-size:20px;color:var(--cyan);text-shadow:0 0 15px rgba(0,229,255,0.4)">${totalMetros.toFixed(1)} m</span>
+      </div>
+    </div>
+  `;
+
+  body.innerHTML = html;
+}
+
+function exportarResumen() {
+  const racks = APP.puntos.filter(p=>p.tipo==='rack');
+  const noRacks = APP.puntos.filter(p=>p.tipo!=='rack');
+  let txt = 'CABLENAV PRO — RESUMEN\n';
+  txt += new Date().toLocaleString('es-ES') + '\n';
+  txt += '─'.repeat(30) + '\n\n';
+
+  let totalM = 0;
+  const cablesConRack = new Set();
+
+  racks.forEach(rack=>{
+    const cables = APP.cables.filter((c,i)=>{
+      if(c.nombreA===rack.nombre||c.nombreB===rack.nombre){ cablesConRack.add(i); return true; }
+      return false;
+    });
+    const metros = cables.reduce((s,c)=>s+c.total,0);
+    totalM += metros;
+    txt += `🖥 ${rack.nombre} [${rack.planta||'?'}]\n`;
+    txt += `   ${cables.length} puntos · ${metros.toFixed(1)} m\n`;
+    cables.forEach(c=>{
+      const nombre = c.nombreA===rack.nombre ? c.nombreB : c.nombreA;
+      txt += `   ↳ ${nombre}: ${c.total.toFixed(1)}m\n`;
+    });
+    txt += '\n';
+  });
+
+  const cablesSinRack = APP.cables.filter((_,i)=>!cablesConRack.has(i));
+  if(cablesSinRack.length > 0) {
+    const metrosSR = cablesSinRack.reduce((s,c)=>s+c.total,0);
+    totalM += metrosSR;
+    txt += `🔌 CABLES DIRECTOS\n`;
+    txt += `   ${cablesSinRack.length} cables · ${metrosSR.toFixed(1)} m\n`;
+    cablesSinRack.forEach(c=>{ txt += `   ↳ ${c.nombreA} → ${c.nombreB}: ${c.total.toFixed(1)}m\n`; });
+    txt += '\n';
+  }
+
+  txt += '─'.repeat(30) + '\n';
+  txt += `TOTAL: ${noRacks.length} puntos · ${APP.cables.length} cables · ${totalM.toFixed(1)} m\n`;
+
+  navigator.clipboard.writeText(txt).then(()=>{
+    const btn = document.querySelector('[onclick="exportarResumen()"]');
+    const orig = btn.textContent;
+    btn.textContent = '✓ COPIADO';
+    setTimeout(()=>btn.textContent=orig, 2000);
+  }).catch(()=> alert(txt));
+}
+
+// ══════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════
+function rumboTxt(d) {
+  return ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'][Math.round(d/22.5)%16];
+}
+
+function angleDiff(a,b) {
+  let d=a-b; while(d>180)d-=360; while(d<-180)d+=360; return d;
+}
+
+function resetPlano() {
+  if(!confirm('¿Resetear posición inercial?')) return;
+  APP.posX=0;APP.posY=0;APP.pasos=0;
+  APP.trayectoria=[{x:0,y:0,alt:APP.altBaro}];
+  dibujarPlano();
+}
+
+function resetTodo() {
+  if(!confirm('¿Reset completo? Se perderá la posición actual.')) return;
+  APP.posX=0;APP.posY=0;APP.pasos=0;APP.grabando=false;
+  APP.calListo=false;APP.calMuestras=[];
+  APP.trayectoria=[{x:0,y:0,alt:null}];
+  APP.altBase=APP.altBaro;
+  APP.umbralAlto=12.0; APP.umbralBajo=9.5;
+  document.getElementById('btnIniciar').textContent='▶ INICIAR';
+  document.getElementById('btnIniciar').classList.remove('activo');
+  document.getElementById('estadoGrab').textContent='PULSA INICIAR PARA COMENZAR';
+  document.getElementById('estadoGrab').className='estado-grab';
+  document.getElementById('calBar').style.width='0%';
+  document.getElementById('calBar').style.background='var(--am)';
+  document.getElementById('calLbl').textContent='Recogiendo muestras...';
+  document.getElementById('btnForzarCal').style.display='none';
+  document.getElementById('cardCal').style.display='none';
+  document.getElementById('badgeCal').textContent='0%';
+  dibujarPlano();
+}
+
+function guardarLS() {
+  localStorage.setItem('cnav_puntos', JSON.stringify(APP.puntos));
+  localStorage.setItem('cnav_cables', JSON.stringify(APP.cables));
+}
+
+// ══════════════════════════════════════════════════
+// DETECTOR MAGNÉTICO
+// ══════════════════════════════════════════════════
+const DET = {
+  activo: false,
+  base: null,
+  muestrasBase: [],
+  historial: [],
+  MAX_H: 50,         // 5s de media a 10Hz
+  UMBRAL_WARN: 200,  // µT variación para warn
+  UMBRAL_ALERT: 400, // µT variación para alert
+  ultimaActualizacionUI: 0,
+  INTERVALO_UI: 2000,
+};
+
+function toggleDetector() {
+  if(!DET.activo) {
+    iniciarDetector();
+  } else {
+    pararDetector();
+  }
+}
+
+function iniciarDetector() {
+  DET.activo = true;
+  document.getElementById('btnDetector').textContent = '⏹ PARAR DETECTOR';
+  document.getElementById('btnDetector').classList.add('activo');
+  document.getElementById('detEstado').textContent = 'ACTIVO';
+
+  if(typeof DeviceOrientationEvent !== 'undefined') {
+    // El magnetómetro viene en DeviceOrientationAbsolute con webkitCompassHeading
+    // pero los valores raw X/Y/Z los da la Generic Sensor API o bien los estimamos
+  }
+
+  // Usar la Generic Sensor API Magnetometer si está disponible
+  if('Magnetometer' in window) {
+    try {
+      DET.sensor = new Magnetometer({frequency: 10});
+      DET.sensor.addEventListener('reading', onMagReading);
+      DET.sensor.addEventListener('error', ()=>{ detFallback(); });
+      DET.sensor.start();
+      document.getElementById('detEstado').textContent = 'MAGNETÓMETRO OK';
+      return;
+    } catch(e) {}
+  }
+  detFallback();
+}
+
+function detFallback() {
+  // Fallback: usar deviceorientation alpha/beta/gamma como proxy del campo
+  // No da µT reales pero sí variaciones
+  document.getElementById('detEstado').textContent = 'MODO ORIENTACIÓN';
+  window.addEventListener('deviceorientationabsolute', onOriMag, true);
+  window.addEventListener('deviceorientation', onOriMag, true);
+}
+
+function onMagReading() {
+  const x = DET.sensor.x || 0;
+  const y = DET.sensor.y || 0;
+  const z = DET.sensor.z || 0;
+  const total = Math.sqrt(x*x + y*y + z*z);
+  actualizarDetector(x, y, z, total);
+}
+
+function onOriMag(e) {
+  if(!DET.activo) return;
+  // alpha/beta/gamma no son µT pero usamos webkitCompassAccuracy como proxy
+  // En su defecto mostramos los ángulos como valores relativos
+  const x = e.beta || 0;
+  const y = e.gamma || 0;
+  const z = e.alpha || 0;
+  const total = Math.sqrt(x*x + y*y + z*z);
+  actualizarDetector(x, y, z, total);
+}
+
+function actualizarDetector(x, y, z, total) {
+  // Suavizar con historial (siempre, independiente del UI)
+  DET.historial.push(total);
+  if(DET.historial.length > DET.MAX_H) DET.historial.shift();
+  const suavizado = DET.historial.reduce((a,b)=>a+b)/DET.historial.length;
+  const variacion = DET.base !== null ? Math.abs(suavizado - DET.base) : 0;
+
+  // Solo actualizar pantalla cada INTERVALO_UI ms
+  const ahora = Date.now();
+  if(ahora - DET.ultimaActualizacionUI < DET.INTERVALO_UI) return;
+  DET.ultimaActualizacionUI = ahora;
+
+  // UI valores
+  document.getElementById('detTotal').textContent = suavizado.toFixed(1);
+  document.getElementById('detX').textContent = x.toFixed(1);
+  document.getElementById('detY').textContent = y.toFixed(1);
+  document.getElementById('detZ').textContent = z.toFixed(1);
+  document.getElementById('detVar').textContent = DET.base!==null ? '+'+variacion.toFixed(1) : '–';
+
+  // Color y barra según variación
+  const pct = Math.min(100, (variacion / 400) * 100);
+  const bar = document.getElementById('detBar');
+  bar.style.width = pct + '%';
+
+  let color, nivel;
+  if(variacion < DET.UMBRAL_WARN) {
+    color = 'var(--verde)'; nivel = 'NORMAL';
+    document.getElementById('detAlerta').classList.remove('show');
+    document.getElementById('detTotal').style.color = 'var(--verde)';
+    document.getElementById('detTotal').style.textShadow = '0 0 20px var(--verde-glow)';
+  } else if(variacion < DET.UMBRAL_ALERT) {
+    color = 'var(--am)'; nivel = '⚠ CAMPO DETECTADO';
+    document.getElementById('detAlerta').classList.remove('show');
+    document.getElementById('detTotal').style.color = 'var(--am)';
+    document.getElementById('detTotal').style.textShadow = '0 0 20px var(--am-glow)';
+  } else {
+    color = 'var(--rojo)'; nivel = '⚡ CAMPO FUERTE';
+    document.getElementById('detAlerta').classList.add('show');
+    document.getElementById('detTotal').style.color = 'var(--rojo)';
+    document.getElementById('detTotal').style.textShadow = '0 0 20px rgba(255,58,92,0.5)';
+  }
+  bar.style.background = color;
+  document.getElementById('detNivel').textContent = nivel;
+}
+
+function pararDetector() {
+  DET.activo = false;
+  if(DET.sensor) { try { DET.sensor.stop(); } catch(e){} }
+  window.removeEventListener('deviceorientationabsolute', onOriMag, true);
+  window.removeEventListener('deviceorientation', onOriMag, true);
+  document.getElementById('btnDetector').textContent = '▶ ACTIVAR DETECTOR';
+  document.getElementById('btnDetector').classList.remove('activo');
+  document.getElementById('detEstado').textContent = 'INACTIVO';
+  document.getElementById('detAlerta').classList.remove('show');
+}
+
+function calibrarDetector() {
+  if(DET.historial.length === 0) {
+    alert('Activa el detector primero y espera unos segundos quieto.');
+    return;
+  }
+  DET.base = DET.historial.reduce((a,b)=>a+b)/DET.historial.length;
+  document.getElementById('detBase').textContent = DET.base.toFixed(1);
+  document.getElementById('detVar').textContent = '0.0';
+
+  // Aviso visual
+  const btn = document.getElementById('btnDetector');
+  const estadoEl = document.getElementById('detEstado');
+  estadoEl.textContent = '✓ BASE CALIBRADA';
+
+  // Vibración si disponible
+  if(navigator.vibrate) navigator.vibrate([100, 50, 100]);
+
+  // Aviso sonoro simple (beep doble)
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.15].forEach(delay => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.12);
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + 0.12);
+    });
+  } catch(e) {}
+
+  // Flash verde en el número
+  document.getElementById('detTotal').style.color = 'var(--verde)';
+  setTimeout(()=>{ estadoEl.textContent = 'ACTIVO · BASE OK'; }, 2000);
+}
+
+// ══════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════
+window.addEventListener('resize', dibujarPlano);
+window.addEventListener('load', () => {
+  setTimeout(dibujarPlano, 100);
+  renderPuntos();
+  actualizarSelectores();
+  renderCables();
+});
+</script>
+</body>
+</html>

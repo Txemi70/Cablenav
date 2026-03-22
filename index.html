@@ -211,9 +211,56 @@ body::before{
 /* ── PLANTA BADGE ── */
 .planta-badge{font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:2px;padding:4px 10px;border-radius:3px;background:var(--am-dim);border:1px solid var(--am);color:var(--am);}
 .sep{height:1px;background:var(--border);margin:4px 0;}
+
+/* ── PANTALLA OBRAS ── */
+#pantallaObras{
+  position:fixed;inset:0;background:var(--bg);z-index:200;
+  display:flex;flex-direction:column;
+  padding:20px;gap:14px;overflow-y:auto;
+}
+#pantallaObras .brand{font-family:'Orbitron',sans-serif;font-size:22px;font-weight:900;color:var(--am);text-shadow:0 0 20px var(--am-glow);letter-spacing:2px;}
+#pantallaObras .brand-sub{font-size:8px;letter-spacing:4px;color:var(--text-dim);margin-bottom:10px;}
+.obra-item{
+  display:flex;align-items:center;gap:10px;
+  padding:12px 14px;
+  background:var(--panel);border:1px solid var(--border2);border-radius:6px;
+  cursor:pointer;transition:all 0.15s;
+}
+.obra-item:hover{border-color:var(--am);background:var(--am-dim);}
+.obra-item.activa{border-color:var(--am);background:rgba(255,179,0,0.07);}
+.obra-nombre{font-family:'Orbitron',sans-serif;font-size:11px;letter-spacing:1px;color:var(--text);flex:1;}
+.obra-meta{font-size:9px;color:var(--text-dim);margin-top:2px;}
+.obra-btns{display:flex;gap:6px;}
+#headerObra{
+  display:flex;align-items:center;gap:8px;cursor:pointer;
+  padding:4px 8px;border-radius:4px;border:1px solid var(--border2);
+  transition:all 0.15s;max-width:180px;overflow:hidden;
+}
+#headerObra:hover{border-color:var(--am);}
+#headerObraNombre{
+  font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:1px;
+  color:var(--am);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  max-width:130px;
+}
+
 </style>
 </head>
 <body>
+
+<!-- PANTALLA SELECTOR DE OBRAS -->
+<div id="pantallaObras">
+  <div>
+    <div class="brand">CABLENAV</div>
+    <div class="brand-sub">SELECCIONA UNA OBRA</div>
+  </div>
+  <button class="btn btn-am" onclick="nuevaObraPrompt()">+ NUEVA OBRA</button>
+  <div id="listaObras"><div style="text-align:center;color:var(--text-dim);font-size:10px;padding:20px;">Cargando...</div></div>
+  <div style="margin-top:auto;padding-top:10px;border-top:1px solid var(--border2);display:flex;gap:8px;">
+    <button class="btn btn-outline" style="flex:1" onclick="exportarTodasObras()">📤 EXPORTAR TODO</button>
+    <button class="btn btn-outline" style="flex:1" onclick="document.getElementById('inputImportObras').click()">📥 IMPORTAR</button>
+    <input type="file" id="inputImportObras" accept=".json" style="display:none" onchange="importarTodasObras(event)">
+  </div>
+</div>
 
 <!-- HEADER -->
 <div id="header">
@@ -221,13 +268,20 @@ body::before{
     <div class="brand">CABLENAV</div>
     <div class="brand-sub">NAVEGACIÓN · MEDICIÓN · PLANO</div>
   </div>
-  <div class="sensor-row">
-    <div class="chip" id="chipGPS"><span class="dot"></span>GPS</div>
-    <div class="chip" id="chipIMU"><span class="dot"></span>IMU</div>
-    <div class="chip" id="chipMAG"><span class="dot"></span>MAG</div>
-    <div class="chip" id="chipBAR"><span class="dot"></span>BAR</div>
+  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+    <div class="sensor-row">
+      <div class="chip" id="chipGPS"><span class="dot"></span>GPS</div>
+      <div class="chip" id="chipIMU"><span class="dot"></span>IMU</div>
+      <div class="chip" id="chipMAG"><span class="dot"></span>MAG</div>
+      <div class="chip" id="chipBAR"><span class="dot"></span>BAR</div>
+    </div>
+    <div id="headerObra" onclick="mostrarPantallaObras()">
+      <span style="font-size:9px;color:var(--text-dim);">📁</span>
+      <span id="headerObraNombre">–</span>
+    </div>
   </div>
 </div>
+
 
 <!-- TABS -->
 <div id="tabs">
@@ -591,6 +645,225 @@ body::before{
 
 <script>
 // ============================================================
+// INDEXEDDB
+// ============================================================
+const DB_NAME = 'CableNavDB';
+const DB_VER = 1;
+let db = null;
+
+function abrirDB() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains('obras')) {
+        d.createObjectStore('obras', {keyPath:'id'});
+      }
+      if (!d.objectStoreNames.contains('config')) {
+        d.createObjectStore('config', {keyPath:'k'});
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; res(db); };
+    req.onerror = () => rej(req.error);
+  });
+}
+
+function dbGet(store, key) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).get(key);
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+
+function dbPut(store, val) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).put(val);
+    req.onsuccess = () => res();
+    req.onerror = () => rej(req.error);
+  });
+}
+
+function dbDelete(store, key) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).delete(key);
+    req.onsuccess = () => res();
+    req.onerror = () => rej(req.error);
+  });
+}
+
+function dbGetAll(store) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+
+// ============================================================
+// OBRAS
+// ============================================================
+let obraActual = null; // objeto obra completo
+
+async function cargarObras() {
+  const obras = await dbGetAll('obras');
+  const lista = document.getElementById('listaObras');
+  if (obras.length === 0) {
+    lista.innerHTML = '<div style="text-align:center;color:var(--text-dim);font-size:10px;padding:20px;">Sin obras. Crea una nueva.</div>';
+    return;
+  }
+  obras.sort((a,b) => b.ts - a.ts);
+  lista.innerHTML = obras.map(o => `
+    <div class="obra-item ${obraActual && obraActual.id === o.id ? 'activa' : ''}">
+      <div style="flex:1" onclick="abrirObra(${o.id})">
+        <div class="obra-nombre">📁 ${o.nombre}</div>
+        <div class="obra-meta">${(o.puntos||[]).length} puntos · ${(o.cables||[]).length} cables · ${new Date(o.ts).toLocaleDateString('es-ES')}</div>
+      </div>
+      <div class="obra-btns">
+        <button class="ico-btn" onclick="renombrarObra(${o.id})" title="Renombrar">✏️</button>
+        <button class="ico-btn" onclick="borrarObra(${o.id})" title="Borrar" style="color:var(--rojo)">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function nuevaObraPrompt() {
+  const nombre = prompt('Nombre de la obra:');
+  if (!nombre || !nombre.trim()) return;
+  const obra = {
+    id: Date.now(),
+    nombre: nombre.trim(),
+    puntos: [],
+    cables: [],
+    paso: 0.72,
+    ts: Date.now()
+  };
+  await dbPut('obras', obra);
+  await abrirObra(obra.id);
+}
+
+async function abrirObra(id) {
+  const obra = await dbGet('obras', id);
+  if (!obra) return;
+  obraActual = obra;
+  APP.puntos = obra.puntos || [];
+  APP.cables = obra.cables || [];
+  APP.PASO_M = obra.paso || 0.72;
+  await dbPut('config', {k:'obraActualId', v: id});
+  document.getElementById('headerObraNombre').textContent = obra.nombre;
+  ocultarPantallaObras();
+  renderPuntos();
+  actualizarSelectores();
+  renderCables();
+  dibujarPlano();
+}
+
+function mostrarPantallaObras() {
+  cargarObras();
+  document.getElementById('pantallaObras').style.display = 'flex';
+}
+
+function ocultarPantallaObras() {
+  document.getElementById('pantallaObras').style.display = 'none';
+}
+
+async function renombrarObra(id) {
+  const obra = await dbGet('obras', id);
+  if (!obra) return;
+  const nombre = prompt('Nuevo nombre:', obra.nombre);
+  if (!nombre || !nombre.trim()) return;
+  obra.nombre = nombre.trim();
+  await dbPut('obras', obra);
+  if (obraActual && obraActual.id === id) {
+    obraActual.nombre = obra.nombre;
+    document.getElementById('headerObraNombre').textContent = obra.nombre;
+  }
+  cargarObras();
+}
+
+async function borrarObra(id) {
+  const obra = await dbGet('obras', id);
+  if (!obra) return;
+  if (!confirm(`¿Borrar obra "${obra.nombre}"? Se perderán todos sus datos.`)) return;
+  await dbDelete('obras', id);
+  if (obraActual && obraActual.id === id) {
+    obraActual = null;
+    APP.puntos = [];
+    APP.cables = [];
+    mostrarPantallaObras();
+  } else {
+    cargarObras();
+  }
+}
+
+async function guardarObraActual() {
+  if (!obraActual) return;
+  obraActual.puntos = APP.puntos;
+  obraActual.cables = APP.cables;
+  obraActual.paso = APP.PASO_M;
+  obraActual.ts = Date.now();
+  await dbPut('obras', obraActual);
+}
+
+// Reemplaza guardarLS
+async function guardarLS() {
+  await guardarObraActual();
+}
+
+// Exportar TODAS las obras en un solo JSON
+async function exportarTodasObras() {
+  const obras = await dbGetAll('obras');
+  if (obras.length === 0) { alert('No hay obras que exportar.'); return; }
+  const backup = { version: 1, fecha: new Date().toISOString(), obras };
+  const json = JSON.stringify(backup, null, 2);
+  const blob = new Blob([json], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `CableNav_backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Importar backup completo (todas las obras)
+async function importarTodasObras(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const txt = await file.text();
+    const data = JSON.parse(txt);
+    // Acepta tanto backup completo {version,obras:[]} como obra suelta {}
+    const obras = data.obras ? data.obras : (data.nombre ? [data] : null);
+    if (!obras || obras.length === 0) { alert('Archivo no válido o sin obras.'); return; }
+    let importadas = 0;
+    for (const obra of obras) {
+      if (!obra.nombre || !Array.isArray(obra.puntos)) continue;
+      // Comprueba si ya existe por nombre
+      const todas = await dbGetAll('obras');
+      const existente = todas.find(o => o.nombre === obra.nombre);
+      if (existente) {
+        if (!confirm(`Ya existe una obra llamada "${obra.nombre}". ¿Sobreescribir?`)) continue;
+        obra.id = existente.id;
+      } else {
+        obra.id = Date.now() + importadas;
+      }
+      obra.ts = Date.now();
+      await dbPut('obras', obra);
+      importadas++;
+    }
+    alert(`${importadas} obra${importadas !== 1 ? 's' : ''} importada${importadas !== 1 ? 's' : ''}.`);
+    cargarObras();
+  } catch(err) {
+    alert('Error al importar: ' + err.message);
+  }
+  e.target.value = '';
+}
+
+// ============================================================
 // ESTADO PRINCIPAL (mejorado)
 // ============================================================
 const APP = {
@@ -631,13 +904,7 @@ const APP = {
   lastCompassTime: 0
 };
 
-// Cargar datos guardados
-try {
-  APP.puntos = JSON.parse(localStorage.getItem('cnav_puntos')||'[]');
-  APP.cables = JSON.parse(localStorage.getItem('cnav_cables')||'[]');
-  const pasoGuardado = localStorage.getItem('cnav_paso');
-  if (pasoGuardado) APP.PASO_M = parseFloat(pasoGuardado);
-} catch(e) {}
+// Datos cargados desde IndexedDB al abrir obra
 
 // ============================================================
 // TABS Y VISTAS (sin cambios)
@@ -690,7 +957,7 @@ function confirmarCalibracionPaso() {
   }
   const nuevoPaso = APP.pasoCalibracion.distancia / pasosRealizados;
   APP.PASO_M = nuevoPaso;
-  localStorage.setItem('cnav_paso', nuevoPaso);
+  if (obraActual) { obraActual.paso = nuevoPaso; guardarLS(); }
   APP.pasoCalibracion = null;
   const btn = document.getElementById('btnConfirmarCal');
   if (btn) btn.style.display = 'none';
@@ -1975,17 +2242,29 @@ function resetTodo() {
   dibujarPlano();
 }
 
-function guardarLS() {
-  localStorage.setItem('cnav_puntos', JSON.stringify(APP.puntos));
-  localStorage.setItem('cnav_cables', JSON.stringify(APP.cables));
-  // paso calibrado ya se guarda en confirmarCalibracionPaso
-}
+// guardarLS está definida arriba junto al sistema de obras (usa IndexedDB)
+
 
 // ============================================================
 // INICIALIZACIÓN
 // ============================================================
 window.addEventListener('resize', dibujarPlano);
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
+  await abrirDB();
+  // Intentar restaurar obra anterior
+  const cfg = await dbGet('config', 'obraActualId');
+  if (cfg && cfg.v) {
+    const obra = await dbGet('obras', cfg.v);
+    if (obra) {
+      await abrirObra(obra.id);
+    } else {
+      mostrarPantallaObras();
+      cargarObras();
+    }
+  } else {
+    mostrarPantallaObras();
+    cargarObras();
+  }
   setTimeout(dibujarPlano, 100);
   renderPuntos();
   actualizarSelectores();

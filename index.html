@@ -265,14 +265,27 @@ body::before{
   <div id="menuOverlay" onclick="cerrarMenu()"></div>
   <div id="menuPanel">
     <div class="menu-title">⚙ GESTIÓN</div>
-    <div class="menu-obra-activa">OBRA ACTIVA<br><span id="menuObraNombre">– Sin obra –</span></div>
+
+    <!-- OBRAS: desplegable con activa + lista + crear -->
+    <div style="background:var(--panel);border:1px solid var(--border2);border-radius:6px;overflow:hidden;">
+      <!-- Obra activa -->
+      <div style="padding:10px 12px;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="toggleObrasDropdown()">
+        <div>
+          <div style="font-size:8px;color:var(--text-dim);letter-spacing:1px;">OBRA ACTIVA</div>
+          <div style="font-family:'Orbitron',sans-serif;font-size:11px;color:var(--am);margin-top:2px;" id="menuObraNombre">– Sin obra –</div>
+        </div>
+        <span id="obrasDropdownArrow" style="color:var(--text-dim);font-size:12px;transition:transform 0.2s;">▼</span>
+      </div>
+      <!-- Lista desplegable -->
+      <div id="obrasDropdown" style="display:none;">
+        <div id="menuListaObras" style="max-height:220px;overflow-y:auto;"></div>
+        <div style="padding:8px;border-top:1px solid var(--border2);">
+          <button class="btn btn-am btn-sm" onclick="nuevaObraModal()" style="width:100%;">＋ CREAR OBRA</button>
+        </div>
+      </div>
+    </div>
 
     <div class="menu-sep"></div>
-    <div class="menu-title" style="font-size:8px;margin-bottom:2px;">OBRAS</div>
-    <div id="menuListaObras"><div style="font-size:9px;color:var(--text-dim);padding:8px;">Cargando...</div></div>
-
-    <div class="menu-sep"></div>
-    <button class="btn btn-am btn-sm" onclick="nuevaObraModal()">＋ CREAR OBRA</button>
     <button class="btn btn-outline btn-sm" onclick="exportarTodasObras()">📤 HACER BACKUP</button>
     <button class="btn btn-outline btn-sm" onclick="document.getElementById('inputImportObras').click()">📥 RESTAURAR</button>
     <input type="file" id="inputImportObras" accept=".json" style="display:none" onchange="importarTodasObras(event)">
@@ -308,7 +321,7 @@ body::before{
       <button class="btn btn-outline btn-sm" onclick="abrirModalCalibracion()" style="width:auto;padding:8px 12px;">CALIBRAR</button>
     </div>
 
-    <div style="margin-top:auto;">
+    <div style="margin-top:auto;padding-top:8px;">
       <button class="btn btn-outline btn-sm" onclick="cerrarMenu()" style="width:100%;">✕ CERRAR</button>
     </div>
   </div>
@@ -479,7 +492,6 @@ body::before{
     </div>
 
     <!-- Botón calibración paso -->
-    <button class="btn btn-outline" onclick="iniciarCalibracionPasos(10)">📏 CALIBRAR PASO (10 m)</button>
     <button class="btn btn-verde" onclick="abrirModalPunto()">📍 MARCAR PUNTO AQUÍ</button>
     <button class="btn btn-rojo" onclick="resetTodo()">✕ RESET COMPLETO</button>
 
@@ -824,6 +836,15 @@ let obraActual = null; // objeto obra completo
 // ============================================================
 // MENÚ GESTIÓN
 // ============================================================
+function toggleObrasDropdown() {
+  const dd = document.getElementById('obrasDropdown');
+  const arrow = document.getElementById('obrasDropdownArrow');
+  const open = dd.style.display === 'none';
+  dd.style.display = open ? 'block' : 'none';
+  arrow.style.transform = open ? 'rotate(180deg)' : '';
+  if (open) cargarObrasMenu();
+}
+
 function abrirMenu() {
   cargarObrasMenu();
   document.getElementById('calPasoValor').textContent = APP.PASO_M.toFixed(3);
@@ -831,11 +852,18 @@ function abrirMenu() {
     document.getElementById('inputMargenFinal').value = obraActual.margenFinal ?? 2;
     document.getElementById('inputMargenRack').value = obraActual.margenRack ?? 3;
     renderAlturasPlantas();
+    document.getElementById('obrasDropdown').style.display = 'none';
+    document.getElementById('obrasDropdownArrow').style.transform = '';
+  } else {
+    document.getElementById('obrasDropdown').style.display = 'block';
+    document.getElementById('obrasDropdownArrow').style.transform = 'rotate(180deg)';
   }
   document.getElementById('menuGestion').classList.add('open');
 }
 
 function cerrarMenu() {
+  document.getElementById('obrasDropdown').style.display = 'none';
+  document.getElementById('obrasDropdownArrow').style.transform = '';
   document.getElementById('menuGestion').classList.remove('open');
 }
 

@@ -312,6 +312,8 @@ body::before{
       </div>
     </div>
 
+    <!-- Botón calibración paso -->
+    <button class="btn btn-outline" onclick="iniciarCalibracionPasos(10)">📏 CALIBRAR PASO (10 m)</button>
     <button class="btn btn-verde" onclick="abrirModalPunto()">📍 MARCAR PUNTO AQUÍ</button>
     <button class="btn btn-rojo" onclick="resetTodo()">✕ RESET COMPLETO</button>
 
@@ -588,14 +590,18 @@ body::before{
 </div>
 
 <script>
-// ══════════════════════════════════════════════════
-// ESTADO
-// ══════════════════════════════════════════════════
+// ============================================================
+// ESTADO PRINCIPAL (mejorado)
+// ============================================================
 const APP = {
   heading: 0,
+  filteredHeading: 0,          // rumbo filtrado con giroscopio
   accel: {x:0,y:0,z:0},
+  gyro: {x:0,y:0,z:0},         // velocidad angular
   altBaro: null,
   altBase: null,
+  altHistorial: [],            // filtro de media móvil para altura
+  ALT_HIST_MAX: 5,             // número de muestras para media
   gps: null,
   posX: 0, posY: 0,
   pasos: 0,
@@ -609,27 +615,36 @@ const APP = {
   navDestino: null,
   navPosX: 0, navPosY: 0,
   navPasos: 0,
-  PASO_M: 0.72,
-  // umbral pedómetro — se auto-ajusta
+  PASO_M: 0.72,                // se sobreescribirá si hay calibración guardada
   umbralAlto: 12.0,
   umbralBajo: 9.5,
+  ultimoPasoTime: 0,           // para evitar pasos falsos muy seguidos
+  pasoCalibracion: null,       // {distancia, pasosInicio}
   tipoSeleccionado: 'rack',
   plantaSeleccionada: 'PB',
   plantaInicio: 'PB',
   _plantaCallback: null,
   _cableModal: null,
-  puntos: JSON.parse(localStorage.getItem('cnav_puntos')||'[]'),
-  cables: JSON.parse(localStorage.getItem('cnav_cables')||'[]'),
+  puntos: [],
+  cables: [],
+  lastGyroTime: 0,
+  lastCompassTime: 0
 };
 
-// ══════════════════════════════════════════════════
-// TABS
-// ══════════════════════════════════════════════════
+// Cargar datos guardados
+try {
+  APP.puntos = JSON.parse(localStorage.getItem('cnav_puntos')||'[]');
+  APP.cables = JSON.parse(localStorage.getItem('cnav_cables')||'[]');
+  const pasoGuardado = localStorage.getItem('cnav_paso');
+  if (pasoGuardado) APP.PASO_M = parseFloat(pasoGuardado);
+} catch(e) {}
+
+// ============================================================
+// TABS Y VISTAS (sin cambios)
+// ============================================================
 function verTab(id) {
-  document.querySelectorAll('.tab').forEach((t,i)=>{
-    const ids=['plano','grabar','navegar','cables','puntos','resumen','detector'];
-    t.classList.toggle('activo', ids[i]===id);
-  });
+  const ids=['plano','grabar','navegar','cables','puntos','resumen','detector'];
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('activo', ids[i]===id));
   document.querySelectorAll('.vista').forEach(v=>v.classList.remove('activa'));
   const vista = document.getElementById('vista'+id.charAt(0).toUpperCase()+id.slice(1));
   if(vista) vista.classList.add('activa');
@@ -639,13 +654,298 @@ function verTab(id) {
   if(id==='resumen') renderResumen();
 }
 
-// ══════════════════════════════════════════════════
-// BOTÓN ÚNICO: INICIAR / PARAR
-// ══════════════════════════════════════════════════
+// ============================================================
+// CALIBRACIÓN DE PASO (nuevo)
+// ============================================================
+function iniciarCalibracionPasos(distanciaMetros) {
+  if (APP.pasoCalibracion) {
+    alert('Ya hay una calibración en curso.');
+    return;
+  }
+  APP.pasoCalibracion = {
+    distancia: distanciaMetros,
+    pasosInicio: APP.pasos,
+    esperando: true
+  };
+  document.getElementById('estadoGrab').textContent = `CALIBRANDO PASO: camina ${distanciaMetros} metros en línea recta y pulsa CONFIRMAR`;
+  document.getElementById('estadoGrab').className = 'estado-grab calibrando';
+  if (!document.getElementById('btnConfirmarCal')) {
+    const btn = document.createElement('button');
+    btn.id = 'btnConfirmarCal';
+    btn.textContent = '✅ CONFIRMAR CALIBRACIÓN';
+    btn.className = 'btn btn-am';
+    btn.onclick = confirmarCalibracionPaso;
+    document.querySelector('#vistaGrabar .card:first-of-type').after(btn);
+  } else {
+    document.getElementById('btnConfirmarCal').style.display = 'block';
+  }
+}
+
+function confirmarCalibracionPaso() {
+  if (!APP.pasoCalibracion || !APP.pasoCalibracion.esperando) return;
+  const pasosRealizados = APP.pasos - APP.pasoCalibracion.pasosInicio;
+  if (pasosRealizados < 2) {
+    alert('Camina al menos 2 pasos para calibrar.');
+    return;
+  }
+  const nuevoPaso = APP.pasoCalibracion.distancia / pasosRealizados;
+  APP.PASO_M = nuevoPaso;
+  localStorage.setItem('cnav_paso', nuevoPaso);
+  APP.pasoCalibracion = null;
+  const btn = document.getElementById('btnConfirmarCal');
+  if (btn) btn.style.display = 'none';
+  document.getElementById('estadoGrab').textContent = `✓ Paso calibrado: ${nuevoPaso.toFixed(2)} m/paso`;
+  document.getElementById('estadoGrab').className = 'estado-grab grabando';
+}
+
+// ============================================================
+// SENSORES (con mejoras)
+// ============================================================
+function activarSensores() {
+  APP.sensoresActivos = true;
+
+  // DeviceMotion (acelerómetro + giroscopio)
+  const bindMotion = () => {
+    window.addEventListener('devicemotion', onMotion, true);
+    setChip('chipIMU','ok');
+    setTimeout(()=>{ if(!APP.calListo) forzarCalibracion(); }, 5000);
+  };
+  if(typeof DeviceMotionEvent !== 'undefined') {
+    if(typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission()
+        .then(r => r==='granted' ? bindMotion() : (setChip('chipIMU','err'), forzarCalibracion()))
+        .catch(()=>{ setChip('chipIMU','err'); forzarCalibracion(); });
+    } else bindMotion();
+  } else { setChip('chipIMU','err'); forzarCalibracion(); }
+
+  // DeviceOrientation (brújula)
+  const bindOri = () => {
+    window.addEventListener('deviceorientationabsolute', onOri, true);
+    window.addEventListener('deviceorientation', onOri, true);
+    setChip('chipMAG','ok');
+  };
+  if(typeof DeviceOrientationEvent !== 'undefined') {
+    if(typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(r => r==='granted' ? bindOri() : setChip('chipMAG','err'))
+        .catch(()=>setChip('chipMAG','err'));
+    } else bindOri();
+  } else setChip('chipMAG','err');
+
+  iniciarBarometro();
+
+  if(navigator.geolocation) {
+    setChip('chipGPS','warn');
+    navigator.geolocation.watchPosition(
+      pos => {
+        APP.gps = pos.coords;
+        document.getElementById('valLat').textContent = pos.coords.latitude.toFixed(6)+'°';
+        document.getElementById('valLon').textContent = pos.coords.longitude.toFixed(6)+'°';
+        if(pos.coords.altitude && APP.altBaro===null) {
+          APP.altBaro = pos.coords.altitude;
+          if(APP.altBase===null) APP.altBase = APP.altBaro;
+          actualizarDisplayBaro();
+        }
+        setChip('chipGPS','ok');
+      },
+      ()=>setChip('chipGPS','err'),
+      {enableHighAccuracy:true, maximumAge:0, timeout:15000}
+    );
+  } else setChip('chipGPS','err');
+}
+
+// Barómetro con filtro de media móvil
+let altHistorial = [];
+function iniciarBarometro() {
+  setChip('chipBAR','warn');
+  const SensorClass = ('Barometer' in window) ? window.Barometer
+                    : ('AmbientPressureSensor' in window) ? window.AmbientPressureSensor
+                    : null;
+  if(SensorClass) {
+    try {
+      const ps = new SensorClass({frequency:2});
+      const timeout = setTimeout(()=>barNoDisponible(), 4000);
+      ps.addEventListener('reading', () => {
+        clearTimeout(timeout);
+        recibirPresion(ps.pressure);
+      });
+      ps.addEventListener('error', () => { clearTimeout(timeout); barNoDisponible(); });
+      ps.start();
+      return;
+    } catch(e) {}
+  }
+  barNoDisponible();
+}
+
+function barNoDisponible() {
+  setChip('chipBAR','err');
+  document.getElementById('valAlt').textContent = 'vía GPS';
+  document.getElementById('valPlanta').textContent = '±1';
+}
+
+function recibirPresion(p) {
+  const alt = 44330 * (1 - Math.pow(p/1013.25, 0.1903));
+  altHistorial.push(alt);
+  if (altHistorial.length > APP.ALT_HIST_MAX) altHistorial.shift();
+  const altFiltrada = altHistorial.reduce((a,b)=>a+b,0) / altHistorial.length;
+  APP.altBaro = altFiltrada;
+  if(APP.altBase===null) APP.altBase = APP.altBaro;
+  actualizarDisplayBaro();
+  setChip('chipBAR','ok');
+}
+
+function actualizarDisplayBaro() {
+  if(APP.altBaro===null) return;
+  document.getElementById('valAlt').textContent = APP.altBaro.toFixed(1);
+  if(APP.altBase!==null) {
+    const diff = APP.altBaro - APP.altBase;
+    const planta = Math.round(diff/3.0);
+    document.getElementById('valPlanta').textContent = (planta>=0?'+':'')+planta;
+  }
+}
+
+function setChip(id, estado) {
+  const el = document.getElementById(id);
+  if(el) el.className = 'chip '+estado;
+}
+
+// ============================================================
+// EVENTOS SENSORES (mejorados)
+// ============================================================
+let lastGyroTime = 0;
+let lastCompassTime = 0;
+function onOri(e) {
+  let h = 0;
+  if(e.webkitCompassHeading!=null) h = e.webkitCompassHeading;
+  else if(e.alpha!=null) h = (360 - e.alpha + 360) % 360;
+  // Filtro complementario con giroscopio
+  const now = Date.now();
+  const dt = lastGyroTime ? (now - lastGyroTime) / 1000 : 0.016;
+  if (APP.gyro && dt > 0 && dt < 0.5) {
+    const gyroHeading = (APP.filteredHeading + APP.gyro.z * dt) % 360;
+    const alpha = 0.98; // peso del giroscopio
+    APP.filteredHeading = alpha * gyroHeading + (1-alpha) * h;
+  } else {
+    APP.filteredHeading = h;
+  }
+  lastGyroTime = now;
+  APP.heading = APP.filteredHeading;
+  document.getElementById('cNeedle').style.transform = `translateX(-50%) rotate(${APP.heading}deg)`;
+  document.getElementById('cDeg').textContent = Math.round(APP.heading);
+  document.getElementById('cTxt').textContent = rumboTxt(APP.heading);
+  if(APP.navegando) actualizarFlecha(APP.heading);
+}
+
+function onMotion(e) {
+  const ag = e.accelerationIncludingGravity;
+  if(!ag) return;
+  APP.accel = {x:ag.x||0, y:ag.y||0, z:ag.z||0};
+  if(e.rotationRate) {
+    APP.gyro = {
+      x: e.rotationRate.alpha || 0,
+      y: e.rotationRate.beta || 0,
+      z: e.rotationRate.gamma || 0
+    };
+  }
+  if(!APP.calListo) {
+    const mag = Math.sqrt(ag.x**2+ag.y**2+ag.z**2);
+    APP.calMuestras.push(mag);
+    if(APP.calMuestras.length>100) APP.calMuestras.shift();
+    checkCal();
+  }
+  if(APP.grabando || APP.navegando) detectarPaso(ag);
+}
+
+function checkCal() {
+  const n = APP.calMuestras.length;
+  const prog = Math.min(100, Math.round((n/30)*100));
+  document.getElementById('calBar').style.width = prog+'%';
+  document.getElementById('badgeCal').textContent = prog+'%';
+  if(n < 10) {
+    document.getElementById('calLbl').textContent = 'Recogiendo muestras... '+prog+'%';
+    return;
+  }
+  const m = APP.calMuestras.reduce((a,b)=>a+b)/n;
+  const std = Math.sqrt(APP.calMuestras.reduce((a,b)=>a+(b-m)**2,0)/n);
+  APP.umbralAlto = m + 2.5;
+  APP.umbralBajo = m - 1.0;
+  document.getElementById('calLbl').textContent = `Vibración: ${std.toFixed(2)} · ${n} muestras`;
+  if(n >= 30) forzarCalibracion();
+}
+
+function forzarCalibracion() {
+  if(APP.calListo) return;
+  APP.calListo = true;
+  document.getElementById('calLbl').textContent = '✓ CALIBRADO · LISTO';
+  document.getElementById('calBar').style.width = '100%';
+  document.getElementById('calBar').style.background = 'var(--verde)';
+  document.getElementById('btnForzarCal').style.display = 'none';
+  document.getElementById('badgeCal').textContent = '✓';
+  if(APP.grabando) {
+    document.getElementById('estadoGrab').textContent = '● GRABANDO TRAYECTO';
+    document.getElementById('estadoGrab').className = 'estado-grab grabando';
+  } else {
+    document.getElementById('estadoGrab').textContent = 'CALIBRADO · PULSA INICIAR';
+    document.getElementById('estadoGrab').className = 'estado-grab';
+  }
+  setTimeout(()=>{ document.getElementById('cardCal').style.display='none'; }, 2000);
+}
+
+// ============================================================
+// DETECCIÓN DE PASOS (mejorada con tiempo mínimo)
+// ============================================================
+function detectarPaso(ag) {
+  const mag = Math.sqrt(ag.x**2+ag.y**2+ag.z**2);
+  const now = Date.now();
+  if (mag > APP.umbralAlto && !APP.enPaso) {
+    APP.enPaso = true;
+  } else if (APP.enPaso && mag < APP.umbralBajo) {
+    if (now - APP.ultimoPasoTime > 300) {
+      APP.enPaso = false;
+      APP.ultimoPasoTime = now;
+      procesarPaso();
+    } else {
+      APP.enPaso = false; // falso pico
+    }
+  }
+}
+
+function procesarPaso() {
+  const rad = APP.heading * Math.PI/180;
+  const dx = Math.sin(rad)*APP.PASO_M;
+  const dy = Math.cos(rad)*APP.PASO_M;
+
+  if(APP.grabando) {
+    APP.pasos++;
+    APP.posX += dx;
+    APP.posY += dy;
+    const dist = Math.sqrt(APP.posX**2+APP.posY**2);
+    APP.trayectoria.push({x:APP.posX, y:APP.posY, alt:APP.altBaro});
+    document.getElementById('valDist').textContent = dist.toFixed(1);
+    document.getElementById('valXY').textContent = APP.posX.toFixed(1)+' · '+APP.posY.toFixed(1);
+    document.getElementById('badgePasos').textContent = APP.pasos+' pasos';
+    document.getElementById('planoPosActual').textContent = 'X:'+APP.posX.toFixed(1)+' Y:'+APP.posY.toFixed(1);
+    dibujarPlano();
+  }
+
+  if(APP.navegando && APP.navDestino) {
+    APP.navPasos++;
+    APP.navPosX += dx;
+    APP.navPosY += dy;
+    const recorrido = Math.sqrt(APP.navPosX**2+APP.navPosY**2);
+    const restante = Math.max(0, APP.navDestino.distH - recorrido);
+    document.getElementById('navDistRest').textContent = restante.toFixed(1);
+    document.getElementById('navRecorrido').textContent = recorrido.toFixed(1);
+    if(restante < 0.6) document.getElementById('alertaLlegada').classList.add('show');
+  }
+}
+
+// ============================================================
+// FUNCIONES DE GRABACIÓN (con mejoras)
+// ============================================================
 function toggleGrabacion() {
   if(!APP.grabando) {
     if(!APP.sensoresActivos) activarSensores();
-    // Preguntar planta antes de empezar
     abrirModalPlantaInicio();
   } else {
     pararGrabacion();
@@ -726,251 +1026,9 @@ function pararGrabacion() {
   document.getElementById('cardCal').style.display = 'none';
 }
 
-// ══════════════════════════════════════════════════
-// SENSORES
-// ══════════════════════════════════════════════════
-function activarSensores() {
-  APP.sensoresActivos = true;
-
-  // DeviceMotion
-  const bindMotion = () => {
-    window.addEventListener('devicemotion', onMotion, true);
-    setChip('chipIMU','ok');
-    // Si en 5s no llegan eventos suficientes, forzar calibración
-    setTimeout(()=>{ if(!APP.calListo) forzarCalibracion(); }, 5000);
-  };
-  if(typeof DeviceMotionEvent !== 'undefined') {
-    if(typeof DeviceMotionEvent.requestPermission === 'function') {
-      DeviceMotionEvent.requestPermission()
-        .then(r => r==='granted' ? bindMotion() : (setChip('chipIMU','err'), forzarCalibracion()))
-        .catch(()=>{ setChip('chipIMU','err'); forzarCalibracion(); });
-    } else {
-      bindMotion();
-    }
-  } else {
-    setChip('chipIMU','err');
-    forzarCalibracion();
-  }
-
-  // DeviceOrientation
-  const bindOri = () => {
-    window.addEventListener('deviceorientationabsolute', onOri, true);
-    window.addEventListener('deviceorientation', onOri, true);
-    setChip('chipMAG','ok');
-  };
-  if(typeof DeviceOrientationEvent !== 'undefined') {
-    if(typeof DeviceOrientationEvent.requestPermission === 'function') {
-      DeviceOrientationEvent.requestPermission()
-        .then(r => r==='granted' ? bindOri() : setChip('chipMAG','err'))
-        .catch(()=>setChip('chipMAG','err'));
-    } else { bindOri(); }
-  } else { setChip('chipMAG','err'); }
-
-  // Barómetro
-  iniciarBarometro();
-
-  // GPS
-  if(navigator.geolocation) {
-    setChip('chipGPS','warn');
-    navigator.geolocation.watchPosition(
-      pos => {
-        APP.gps = pos.coords;
-        document.getElementById('valLat').textContent = pos.coords.latitude.toFixed(6)+'°';
-        document.getElementById('valLon').textContent = pos.coords.longitude.toFixed(6)+'°';
-        if(pos.coords.altitude && APP.altBaro===null) {
-          APP.altBaro = pos.coords.altitude;
-          if(APP.altBase===null) APP.altBase = APP.altBaro;
-          actualizarDisplayBaro();
-        }
-        setChip('chipGPS','ok');
-      },
-      ()=>setChip('chipGPS','err'),
-      {enableHighAccuracy:true, maximumAge:0, timeout:15000}
-    );
-  } else { setChip('chipGPS','err'); }
-}
-
-function iniciarBarometro() {
-  setChip('chipBAR','warn');
-
-  // Intentar con ambos nombres de la Generic Sensor API
-  const SensorClass = ('Barometer' in window) ? window.Barometer
-                    : ('AmbientPressureSensor' in window) ? window.AmbientPressureSensor
-                    : null;
-
-  if(SensorClass) {
-    try {
-      const ps = new SensorClass({frequency:2});
-      const timeout = setTimeout(()=>barNoDisponible(), 4000);
-      ps.addEventListener('reading', () => {
-        clearTimeout(timeout);
-        recibirPresion(ps.pressure);
-      });
-      ps.addEventListener('error', () => {
-        clearTimeout(timeout);
-        barNoDisponible();
-      });
-      ps.start();
-      return;
-    } catch(e) {}
-  }
-  barNoDisponible();
-}
-
-function barNoDisponible() {
-  setChip('chipBAR','err');
-  document.getElementById('valAlt').textContent = 'vía GPS';
-  document.getElementById('valPlanta').textContent = '±1';
-}
-
-function recibirPresion(p) {
-  APP.altBaro = 44330 * (1 - Math.pow(p/1013.25, 0.1903));
-  if(APP.altBase===null) APP.altBase = APP.altBaro;
-  actualizarDisplayBaro();
-  setChip('chipBAR','ok');
-}
-
-function actualizarDisplayBaro() {
-  if(APP.altBaro===null) return;
-  document.getElementById('valAlt').textContent = APP.altBaro.toFixed(1);
-  if(APP.altBase!==null) {
-    const diff = APP.altBaro - APP.altBase;
-    const planta = Math.round(diff/3.0);
-    document.getElementById('valPlanta').textContent = (planta>=0?'+':'')+planta;
-  }
-}
-
-function setChip(id, estado) {
-  const el = document.getElementById(id);
-  if(el) el.className = 'chip '+estado;
-}
-
-// ══════════════════════════════════════════════════
-// EVENTOS SENSORES
-// ══════════════════════════════════════════════════
-function onOri(e) {
-  let h = 0;
-  if(e.webkitCompassHeading!=null) h = e.webkitCompassHeading;
-  else if(e.alpha!=null) h = (360 - e.alpha + 360) % 360;
-  APP.heading = h;
-  document.getElementById('cNeedle').style.transform = `translateX(-50%) rotate(${h}deg)`;
-  document.getElementById('cDeg').textContent = Math.round(h);
-  document.getElementById('cTxt').textContent = rumboTxt(h);
-  if(APP.navegando) actualizarFlecha(h);
-}
-
-function onMotion(e) {
-  const ag = e.accelerationIncludingGravity;
-  if(!ag) return;
-  APP.accel = {x:ag.x||0, y:ag.y||0, z:ag.z||0};
-
-  // Calibración en paralelo (aunque ya esté grabando)
-  if(!APP.calListo) {
-    const mag = Math.sqrt(ag.x**2+ag.y**2+ag.z**2);
-    APP.calMuestras.push(mag);
-    if(APP.calMuestras.length>100) APP.calMuestras.shift();
-    checkCal();
-  }
-
-  // Pasos siempre que esté activo
-  if(APP.grabando || APP.navegando) detectarPaso(ag);
-}
-
-// ══════════════════════════════════════════════════
-// CALIBRACIÓN (en segundo plano, no bloquea)
-// ══════════════════════════════════════════════════
-function checkCal() {
-  const n = APP.calMuestras.length;
-  const prog = Math.min(100, Math.round((n/30)*100));
-  document.getElementById('calBar').style.width = prog+'%';
-  document.getElementById('badgeCal').textContent = prog+'%';
-
-  if(n < 10) {
-    document.getElementById('calLbl').textContent = 'Recogiendo muestras... '+prog+'%';
-    return;
-  }
-
-  const m = APP.calMuestras.reduce((a,b)=>a+b)/n;
-  const std = Math.sqrt(APP.calMuestras.reduce((a,b)=>a+(b-m)**2,0)/n);
-
-  // Ajustar umbrales dinámicos del pedómetro
-  APP.umbralAlto = m + 2.5;
-  APP.umbralBajo = m - 1.0;
-
-  document.getElementById('calLbl').textContent = `Vibración: ${std.toFixed(2)} · ${n} muestras`;
-
-  // Calibrar siempre al llegar a 30 muestras, sin importar std
-  if(n >= 30) {
-    forzarCalibracion();
-  }
-}
-
-function forzarCalibracion() {
-  if(APP.calListo) return; // evitar llamadas dobles
-  APP.calListo = true;
-  document.getElementById('calLbl').textContent = '✓ CALIBRADO · LISTO';
-  document.getElementById('calBar').style.width = '100%';
-  document.getElementById('calBar').style.background = 'var(--verde)';
-  document.getElementById('btnForzarCal').style.display = 'none';
-  document.getElementById('badgeCal').textContent = '✓';
-
-  // Actualizar estado siempre, esté grabando o no
-  if(APP.grabando) {
-    document.getElementById('estadoGrab').textContent = '● GRABANDO TRAYECTO';
-    document.getElementById('estadoGrab').className = 'estado-grab grabando';
-  } else {
-    document.getElementById('estadoGrab').textContent = 'CALIBRADO · PULSA INICIAR';
-    document.getElementById('estadoGrab').className = 'estado-grab';
-  }
-  setTimeout(()=>{ document.getElementById('cardCal').style.display='none'; }, 2000);
-}
-
-// ══════════════════════════════════════════════════
-// DETECCIÓN DE PASOS (umbral dinámico)
-// ══════════════════════════════════════════════════
-function detectarPaso(ag) {
-  const mag = Math.sqrt(ag.x**2+ag.y**2+ag.z**2);
-  if(!APP.enPaso && mag > APP.umbralAlto) {
-    APP.enPaso = true;
-  } else if(APP.enPaso && mag < APP.umbralBajo) {
-    APP.enPaso = false;
-    procesarPaso();
-  }
-}
-
-function procesarPaso() {
-  const rad = APP.heading * Math.PI/180;
-  const dx = Math.sin(rad)*APP.PASO_M;
-  const dy = Math.cos(rad)*APP.PASO_M;
-
-  if(APP.grabando) {
-    APP.pasos++;
-    APP.posX += dx;
-    APP.posY += dy;
-    const dist = Math.sqrt(APP.posX**2+APP.posY**2);
-    APP.trayectoria.push({x:APP.posX, y:APP.posY, alt:APP.altBaro});
-    document.getElementById('valDist').textContent = dist.toFixed(1);
-    document.getElementById('valXY').textContent = APP.posX.toFixed(1)+' · '+APP.posY.toFixed(1);
-    document.getElementById('badgePasos').textContent = APP.pasos+' pasos';
-    document.getElementById('planoPosActual').textContent = 'X:'+APP.posX.toFixed(1)+' Y:'+APP.posY.toFixed(1);
-    dibujarPlano();
-  }
-
-  if(APP.navegando && APP.navDestino) {
-    APP.navPasos++;
-    APP.navPosX += dx;
-    APP.navPosY += dy;
-    const recorrido = Math.sqrt(APP.navPosX**2+APP.navPosY**2);
-    const restante = Math.max(0, APP.navDestino.distH - recorrido);
-    document.getElementById('navDistRest').textContent = restante.toFixed(1);
-    document.getElementById('navRecorrido').textContent = recorrido.toFixed(1);
-    if(restante < 0.6) document.getElementById('alertaLlegada').classList.add('show');
-  }
-}
-
-// ══════════════════════════════════════════════════
-// MODAL PUNTO
-// ══════════════════════════════════════════════════
+// ============================================================
+// MODAL PUNTO (con corrección de posición)
+// ============================================================
 function abrirModalPunto() {
   document.getElementById('modalX').textContent = APP.posX.toFixed(2);
   document.getElementById('modalY').textContent = APP.posY.toFixed(2);
@@ -979,7 +1037,6 @@ function abrirModalPunto() {
   document.getElementById('modalCableResult').style.display = 'none';
   document.getElementById('seccionRack').style.display = 'none';
 
-  // Generar botones de planta — por defecto la planta de inicio de sesión
   const plantas = ['S2','S1','PB','ETP','P1','P2','P3','P4','P5','P6','P7','P8','P9'];
   const grid = document.getElementById('plantaGrid');
   const defPlanta = APP.plantaInicio || 'PB';
@@ -994,10 +1051,8 @@ function abrirModalPunto() {
     >${p}</div>
   `).join('');
 
-  // Si no hay racks todavía, forzar tipo rack
   const hayRacks = APP.puntos.some(p=>p.tipo==='rack');
   if(!hayRacks) {
-    // Seleccionar rack automáticamente y avisar
     document.querySelectorAll('.tipo-btn').forEach(b=>b.classList.remove('sel'));
     document.querySelector('[data-tipo="rack"]').classList.add('sel');
     APP.tipoSeleccionado = 'rack';
@@ -1005,13 +1060,11 @@ function abrirModalPunto() {
     document.getElementById('inputNombrePunto').placeholder = 'Nombre del rack (ej: Rack-1 PB)';
     document.getElementById('seccionRack').style.display = 'none';
   } else {
-    // Tipo por defecto puesto (no rack)
     document.querySelectorAll('.tipo-btn').forEach(b=>b.classList.remove('sel'));
     document.querySelector('[data-tipo="puesto"]').classList.add('sel');
     APP.tipoSeleccionado = 'puesto';
     document.getElementById('modalTitulo').textContent = '📍 NUEVO PUNTO';
     document.getElementById('inputNombrePunto').placeholder = 'Nombre del punto';
-    // Mostrar selector de racks
     const racks = APP.puntos.filter(p=>p.tipo==='rack');
     const secRack = document.getElementById('seccionRack');
     secRack.style.display = 'block';
@@ -1037,7 +1090,6 @@ function selPlanta(el, planta) {
   el.style.background='var(--am-dim)';
   el.style.color='var(--am)';
   APP.plantaSeleccionada = planta;
-  // Recalcular cable si hay rack seleccionado
   if(APP.tipoSeleccionado !== 'rack') calcularCableModal();
 }
 
@@ -1049,7 +1101,6 @@ function selTipo(el, tipo) {
   document.querySelectorAll('.tipo-btn').forEach(b=>b.classList.remove('sel'));
   el.classList.add('sel');
   APP.tipoSeleccionado = tipo;
-
   const secRack = document.getElementById('seccionRack');
   if(tipo === 'rack') {
     secRack.style.display = 'none';
@@ -1061,18 +1112,14 @@ function selTipo(el, tipo) {
       secRack.style.display = 'block';
       document.getElementById('modalTitulo').textContent = '📍 NUEVO PUNTO';
       document.getElementById('inputNombrePunto').placeholder = 'Nombre del punto';
-      // Poblar selector de racks
       const sel = document.getElementById('selRackOrigen');
       sel.innerHTML = '<option value="">— Selecciona rack —</option>' +
         racks.map(r=>`<option value="${r.id}">${r.icono} ${r.nombre} [${r.planta||'?'}]</option>`).join('');
-      // Auto-seleccionar si solo hay uno
       if(racks.length === 1) {
         sel.value = racks[0].id;
         calcularCableModal();
       }
-    } else {
-      secRack.style.display = 'none';
-    }
+    } else secRack.style.display = 'none';
   }
 }
 
@@ -1094,14 +1141,12 @@ function calcularCableModal() {
   const iPunto = ORDEN_PLANTAS.indexOf(APP.plantaSeleccionada||'PB');
   const diffPlantas = Math.abs(iPunto - iRack);
   const dAlt = diffPlantas * 3.0;
-
   const dist3D = Math.sqrt(distH*distH + dAlt*dAlt);
-  const holgura = 0.15; // 15% por defecto
+  const holgura = 0.15;
   const total = dist3D * (1 + holgura);
 
   APP._cableModal = {
-    nombreA: rack.nombre, nombreB: '?', // se actualiza al guardar
-    rackId, distH, dAlt, dist3D, total, holgura: 15,
+    nombreA: rack.nombre, nombreB: '?', rackId, distH, dAlt, dist3D, total, holgura: 15,
     plantaInfo: diffPlantas>0 ? `${rack.planta||'?'} → ${APP.plantaSeleccionada} (${diffPlantas} pl.)` : 'misma planta'
   };
 
@@ -1115,14 +1160,25 @@ function guardarPunto() {
   const nombre = document.getElementById('inputNombrePunto').value.trim();
   if(!nombre) { document.getElementById('inputNombrePunto').focus(); return; }
 
-  // Si es no-rack, exigir rack seleccionado
-  if(APP.tipoSeleccionado !== 'rack') {
+  if(APP.tipoSelecionado !== 'rack') {
     const hayRacks = APP.puntos.some(p=>p.tipo==='rack');
     if(hayRacks && !document.getElementById('selRackOrigen').value) {
       document.getElementById('selRackOrigen').style.borderColor = 'var(--rojo)';
       setTimeout(()=>document.getElementById('selRackOrigen').style.borderColor='var(--am)', 2000);
       return;
     }
+  }
+
+  // Buscar si ya existe un punto con el mismo nombre
+  const existe = APP.puntos.find(p => p.nombre === nombre);
+  if (existe) {
+    // Corregir posición actual con las coordenadas del punto existente
+    APP.posX = existe.x;
+    APP.posY = existe.y;
+    if (APP.altBaro !== null && existe.alt !== null) {
+      // Opcional: también se podría corregir altitud base
+    }
+    console.log(`Posición corregida a (${existe.x}, ${existe.y})`);
   }
 
   const p = {
@@ -1136,9 +1192,10 @@ function guardarPunto() {
     gps: APP.gps ? {lat:APP.gps.latitude, lon:APP.gps.longitude} : null,
     ts: new Date().toLocaleTimeString('es-ES')
   };
-  APP.puntos.push(p);
 
-  // Guardar cable automáticamente si hay cálculo
+  if (!existe) APP.puntos.push(p);
+  // si existe, se ha actualizado la posición actual pero no se duplica el punto
+
   if(APP._cableModal && APP.tipoSeleccionado !== 'rack') {
     APP._cableModal.nombreB = nombre;
     APP.cables.push({...APP._cableModal, ts: new Date().toLocaleTimeString('es-ES')});
@@ -1154,9 +1211,9 @@ function guardarPunto() {
   renderCables();
 }
 
-// ══════════════════════════════════════════════════
-// NAVEGACIÓN
-// ══════════════════════════════════════════════════
+// ============================================================
+// NAVEGACIÓN Y CÁLCULO DE CABLES (sin cambios, ya funcionan)
+// ============================================================
 function iniciarNavegacion() {
   const sel = document.getElementById('selDestino').value;
   if(!sel) return;
@@ -1175,9 +1232,7 @@ function iniciarNavegacion() {
   document.getElementById('navRumboObj').textContent = Math.round(rumbo)+'°';
   document.getElementById('navDistRest').textContent = distH.toFixed(1);
 
-  // Diferencia de planta: planta actual (de inicio de sesión) vs planta destino
   const ORDEN_PLANTAS = ['S2','S1','PB','ETP','P1','P2','P3','P4','P5','P6','P7','P8','P9'];
-  // Sanitizar — descartar valores inválidos (null, 0, undefined, número)
   const sanitizar = v => (typeof v === 'string' && ORDEN_PLANTAS.includes(v)) ? v : 'PB';
   const plantaActual = sanitizar(APP.plantaInicio);
   const plantaDest = sanitizar(dest.planta);
@@ -1185,18 +1240,15 @@ function iniciarNavegacion() {
   const iDest = ORDEN_PLANTAS.indexOf(plantaDest);
   const diffPlantas = iDest - iOrigen;
   const diffAbs = Math.abs(diffPlantas);
-
   let plantaTxt;
   if(diffPlantas === 0) plantaTxt = 'MISMA PLANTA';
   else if(diffPlantas > 0) plantaTxt = `▲ ${diffAbs} PLANTA${diffAbs>1?'S':''} (${plantaDest})`;
   else plantaTxt = `▼ ${diffAbs} PLANTA${diffAbs>1?'S':''} (${plantaDest})`;
-
   document.getElementById('navPlantaDiff').textContent = plantaTxt;
   document.getElementById('navDiffAlt').textContent = plantaDest;
   document.getElementById('alertaLlegada').classList.remove('show');
   document.getElementById('cardNav').style.display='block';
 
-  // Activar sensores si no están activos
   if(!APP.sensoresActivos) activarSensores();
 }
 
@@ -1213,11 +1265,6 @@ function actualizarFlecha(h) {
   document.getElementById('navTxt').textContent = txt;
 }
 
-// ══════════════════════════════════════════════════
-// CÁLCULO DE CABLE
-// ══════════════════════════════════════════════════
-let ultimoCableCalc = null;
-
 function calcularCable() {
   const idA = document.getElementById('selCableA').value;
   const idB = document.getElementById('selCableB').value;
@@ -1228,27 +1275,24 @@ function calcularCable() {
   const dX = pB.x - pA.x;
   const dY = pB.y - pA.y;
   const distH = Math.sqrt(dX**2+dY**2);
-
-  // Calcular diferencia vertical por planta manual (3m por planta)
   const ORDEN_PLANTAS = ['S2','S1','PB','ETP','P1','P2','P3','P4','P5','P6','P7','P8','P9'];
   const iA = ORDEN_PLANTAS.indexOf(typeof pA.planta==='string'&&ORDEN_PLANTAS.includes(pA.planta)?pA.planta:'PB');
   const iB = ORDEN_PLANTAS.indexOf(typeof pB.planta==='string'&&ORDEN_PLANTAS.includes(pB.planta)?pB.planta:'PB');
   const diffPlantas = Math.abs(iB - iA);
-  const dAlt = diffPlantas * 3.0; // 3m por planta
-
+  const dAlt = diffPlantas * 3.0;
   const dist3D = Math.sqrt(distH**2+dAlt**2);
   const holgura = parseInt(document.getElementById('holgura').value)/100;
   const total = dist3D*(1+holgura);
   const plantaInfo = diffPlantas>0 ? `${pA.planta||'?'} → ${pB.planta||'?'} (${diffPlantas} planta${diffPlantas>1?'s':''})` : 'misma planta';
-  ultimoCableCalc = {nombreA:pA.nombre, nombreB:pB.nombre, distH, dAlt, dist3D, total, holgura:parseInt(document.getElementById('holgura').value)};
+  window.ultimoCableCalc = {nombreA:pA.nombre, nombreB:pB.nombre, distH, dAlt, dist3D, total, holgura:parseInt(document.getElementById('holgura').value)};
   document.getElementById('resCableTotal').textContent = total.toFixed(1);
-  document.getElementById('resCableDetalle').textContent = `Horizontal: ${distH.toFixed(1)}m · Vertical: ${dAlt.toFixed(1)}m · ${plantaInfo} · 3D: ${dist3D.toFixed(1)}m · +${ultimoCableCalc.holgura}% holgura`;
+  document.getElementById('resCableDetalle').textContent = `Horizontal: ${distH.toFixed(1)}m · Vertical: ${dAlt.toFixed(1)}m · ${plantaInfo} · 3D: ${dist3D.toFixed(1)}m · +${window.ultimoCableCalc.holgura}% holgura`;
   document.getElementById('cardResultCable').style.display='block';
 }
 
 function guardarCable() {
-  if(!ultimoCableCalc) return;
-  APP.cables.push({...ultimoCableCalc, ts: new Date().toLocaleTimeString('es-ES')});
+  if(!window.ultimoCableCalc) return;
+  APP.cables.push({...window.ultimoCableCalc, ts: new Date().toLocaleTimeString('es-ES')});
   guardarLS();
   renderCables();
 }
@@ -1278,23 +1322,17 @@ function borrarCable(i) {
   renderCables();
 }
 
-// ── EDITAR CABLE ──
 let _editCableIdx = null;
-
 function abrirEditCable(i) {
   _editCableIdx = i;
   const c = APP.cables[i];
-
   document.getElementById('editCableNombre').value = c.nombreB;
   document.getElementById('editCableHolgura').value = c.holgura || 15;
   document.getElementById('editHolguraVal').textContent = (c.holgura||15)+'%';
-
-  // Poblar selector de racks
   const racks = APP.puntos.filter(p=>p.tipo==='rack');
   const sel = document.getElementById('editCableRack');
   sel.innerHTML = '<option value="">— Sin rack —</option>' +
     racks.map(r=>`<option value="${r.id}" ${r.nombre===c.nombreA?'selected':''}>${r.icono} ${r.nombre} [${r.planta||'?'}]</option>`).join('');
-
   recalcularEditCable();
   document.getElementById('modalEditCable').classList.add('open');
 }
@@ -1303,12 +1341,9 @@ function recalcularEditCable() {
   const rackId = document.getElementById('editCableRack').value;
   const rack = APP.puntos.find(p=>p.id==rackId);
   if(!rack) { document.getElementById('editCableResultado').style.display='none'; return; }
-
-  // Buscar el punto destino por su nombre actual en el cable
   const c = APP.cables[_editCableIdx];
   const punto = APP.puntos.find(p=>p.nombre===c.nombreB);
   if(!punto) { document.getElementById('editCableResultado').style.display='none'; return; }
-
   const dX = punto.x - rack.x;
   const dY = punto.y - rack.y;
   const distH = Math.sqrt(dX*dX + dY*dY);
@@ -1320,13 +1355,10 @@ function recalcularEditCable() {
   const dist3D = Math.sqrt(distH*distH + dAlt*dAlt);
   const holgura = parseInt(document.getElementById('editCableHolgura').value) / 100;
   const total = dist3D * (1 + holgura);
-
   document._editCableCalc = { rack, punto, distH, dAlt, dist3D, total, holgura: parseInt(document.getElementById('editCableHolgura').value) };
-
   document.getElementById('editCableM').textContent = total.toFixed(1);
   const plantaInfo = diffPlantas>0 ? `${rack.planta||'?'} → ${punto.planta||'?'} (${diffPlantas} pl.)` : 'misma planta';
-  document.getElementById('editCableDetalle').textContent =
-    `H:${distH.toFixed(1)}m · V:${dAlt.toFixed(1)}m · ${plantaInfo} · +${parseInt(document.getElementById('editCableHolgura').value)}%`;
+  document.getElementById('editCableDetalle').textContent = `H:${distH.toFixed(1)}m · V:${dAlt.toFixed(1)}m · ${plantaInfo} · +${parseInt(document.getElementById('editCableHolgura').value)}%`;
   document.getElementById('editCableResultado').style.display = 'block';
 }
 
@@ -1334,16 +1366,12 @@ function guardarEditCable() {
   if(_editCableIdx === null) return;
   const nuevoNombre = document.getElementById('editCableNombre').value.trim();
   if(!nuevoNombre) { document.getElementById('editCableNombre').focus(); return; }
-
   const c = APP.cables[_editCableIdx];
   const calc = document._editCableCalc;
-
-  // Actualizar nombre del punto si cambió
   if(nuevoNombre !== c.nombreB) {
     const punto = APP.puntos.find(p=>p.nombre===c.nombreB);
     if(punto) punto.nombre = nuevoNombre;
   }
-
   if(calc) {
     APP.cables[_editCableIdx] = {
       ...c,
@@ -1359,7 +1387,6 @@ function guardarEditCable() {
   } else {
     APP.cables[_editCableIdx].nombreB = nuevoNombre;
   }
-
   guardarLS();
   cerrarEditCable();
   renderCables();
@@ -1374,9 +1401,6 @@ function cerrarEditCable() {
   document._editCableCalc = null;
 }
 
-// ══════════════════════════════════════════════════
-// LISTA DE PUNTOS
-// ══════════════════════════════════════════════════
 function renderPuntos() {
   const lista = document.getElementById('listaPuntos');
   document.getElementById('badgePuntosTotal').textContent = APP.puntos.length;
@@ -1409,16 +1433,13 @@ function navAPoint(id) {
       iniciarNavegacion();
     }, 50);
   };
-  // Preguntar planta siempre antes de navegar
   abrirModalPlantaInicio(navegarAhora);
 }
 
 function borrarPunto(id) {
   const p = APP.puntos.find(x=>x.id==id);
   if(!p) return;
-  // Borrar cables asociados (donde el punto es origen o destino)
   APP.cables = APP.cables.filter(c => c.nombreA !== p.nombre && c.nombreB !== p.nombre);
-  // Si era un rack, borrar también los cables de todos sus puntos destino que apuntaban a él
   APP.puntos = APP.puntos.filter(x=>x.id!=id);
   guardarLS();
   renderPuntos();
@@ -1446,9 +1467,9 @@ function actualizarSelectores() {
   });
 }
 
-// ══════════════════════════════════════════════════
-// PLANO CANVAS con zoom/pan
-// ══════════════════════════════════════════════════
+// ============================================================
+// PLANO (zoom/pan ya implementado, sin cambios)
+// ============================================================
 const PLANO = { scale: 1, offX: 0, offY: 0, minScale: 0.2, maxScale: 10 };
 let _touch = { dist: 0, midX: 0, midY: 0, panX: 0, panY: 0, dragging: false };
 
@@ -1457,7 +1478,6 @@ function initPlanoGestures() {
   if(!canvas || canvas._gesturesInit) return;
   canvas._gesturesInit = true;
 
-  // Touch pinch-zoom + pan
   canvas.addEventListener('touchstart', e=>{
     if(e.touches.length === 2) {
       const dx = e.touches[1].clientX - e.touches[0].clientX;
@@ -1503,7 +1523,6 @@ function initPlanoGestures() {
 
   canvas.addEventListener('touchend', ()=>{ _touch.dragging = false; }, {passive:true});
 
-  // Doble tap para resetear zoom
   let lastTap = 0;
   canvas.addEventListener('touchend', e=>{
     const now = Date.now();
@@ -1520,23 +1539,18 @@ function dibujarPlano() {
   canvas.width = W; canvas.height = H;
   initPlanoGestures();
 
-  // Actualizar info del plano
   const racks = APP.puntos.filter(p=>p.tipo==='rack').length;
   const puntos = APP.puntos.filter(p=>p.tipo!=='rack').length;
-  document.getElementById('planoNumPuntos').textContent =
-    `${racks} rack${racks!==1?'s':''} · ${puntos} punto${puntos!==1?'s':''}`;
-  document.getElementById('planoPosActual').textContent =
-    APP.grabando ? `X:${APP.posX.toFixed(1)} Y:${APP.posY.toFixed(1)}` : '–';
+  document.getElementById('planoNumPuntos').textContent = `${racks} rack${racks!==1?'s':''} · ${puntos} punto${puntos!==1?'s':''}`;
+  document.getElementById('planoPosActual').textContent = APP.grabando ? `X:${APP.posX.toFixed(1)} Y:${APP.posY.toFixed(1)}` : '–';
 
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#060508';
   ctx.fillRect(0,0,W,H);
-
   ctx.save();
   ctx.translate(PLANO.offX, PLANO.offY);
   ctx.scale(PLANO.scale, PLANO.scale);
 
-  // Calcular bounds de todos los puntos
   const allX = APP.puntos.length ? APP.puntos.map(p=>p.x) : [0];
   const allY = APP.puntos.length ? APP.puntos.map(p=>p.y) : [0];
   const minX=Math.min(...allX), maxX=Math.max(...allX);
@@ -1550,13 +1564,11 @@ function dibujarPlano() {
     sy: cy - (y-(minY+maxY)/2)*baseScale
   });
 
-  // Grid
   const gs = 30;
   ctx.strokeStyle='rgba(255,179,0,0.05)'; ctx.lineWidth=1/PLANO.scale;
   for(let x=-W;x<W*2;x+=gs){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
   for(let y=-H;y<H*2;y+=gs){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
 
-  // Cables
   APP.cables.forEach(c=>{
     const pA=APP.puntos.find(p=>p.nombre===c.nombreA);
     const pB=APP.puntos.find(p=>p.nombre===c.nombreB);
@@ -1571,7 +1583,21 @@ function dibujarPlano() {
     ctx.fillText(c.total.toFixed(1)+'m',mx,my-2/PLANO.scale);
   });
 
-  // Posición actual
+  // Trayectoria
+  if (APP.trayectoria.length > 1) {
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(255,179,0,0.6)';
+    ctx.lineWidth = 2 / PLANO.scale;
+    ctx.setLineDash([5/PLANO.scale, 5/PLANO.scale]);
+    for (let i = 0; i < APP.trayectoria.length; i++) {
+      const p = toS(APP.trayectoria[i].x, APP.trayectoria[i].y);
+      if (i === 0) ctx.moveTo(p.sx, p.sy);
+      else ctx.lineTo(p.sx, p.sy);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   const cur=toS(APP.posX,APP.posY);
   ctx.beginPath();ctx.arc(cur.sx,cur.sy,7/PLANO.scale,0,Math.PI*2);ctx.fillStyle='rgba(255,179,0,0.3)';ctx.fill();
   ctx.beginPath();ctx.arc(cur.sx,cur.sy,4/PLANO.scale,0,Math.PI*2);ctx.fillStyle='#FFB300';ctx.shadowColor='#FFB300';ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0;
@@ -1579,7 +1605,6 @@ function dibujarPlano() {
   ctx.beginPath();ctx.strokeStyle='rgba(255,179,0,0.7)';ctx.lineWidth=2/PLANO.scale;
   ctx.moveTo(cur.sx,cur.sy);ctx.lineTo(cur.sx+Math.sin(hr)*20/PLANO.scale,cur.sy-Math.cos(hr)*20/PLANO.scale);ctx.stroke();
 
-  // Puntos
   APP.puntos.forEach(p=>{
     const s=toS(p.x,p.y);
     const r = p.tipo==='rack' ? 10/PLANO.scale : 8/PLANO.scale;
@@ -1599,17 +1624,15 @@ function dibujarPlano() {
   });
 
   ctx.restore();
-
-  // Info fija (fuera del transform)
   ctx.fillStyle='rgba(255,179,0,0.4)';
   ctx.font='bold 10px Orbitron,monospace';
   ctx.textAlign='left'; ctx.textBaseline='top';
   ctx.fillText(`×${PLANO.scale.toFixed(1)}  doble tap=reset zoom`, 8, 8);
 }
 
-// ══════════════════════════════════════════════════
-// RESUMEN
-// ══════════════════════════════════════════════════
+// ============================================================
+// RESUMEN Y DETECTOR (sin cambios, ya funcionan)
+// ============================================================
 function renderResumen() {
   const body = document.getElementById('resumenBody');
   const racks = APP.puntos.filter(p=>p.tipo==='rack');
@@ -1623,12 +1646,10 @@ function renderResumen() {
   let totalMetros = 0;
   let html = '';
 
-  // ── Por rack ──
   racks.forEach(rack => {
     const cablesRack = APP.cables.filter(c => c.nombreA === rack.nombre || c.nombreB === rack.nombre);
     const metrosRack = cablesRack.reduce((s,c)=>s+c.total,0);
     totalMetros += metrosRack;
-
     const desglose = {};
     cablesRack.forEach(c=>{
       const nombrePunto = c.nombreA === rack.nombre ? c.nombreB : c.nombreA;
@@ -1638,7 +1659,6 @@ function renderResumen() {
       desglose[tipo].count++;
       desglose[tipo].metros += c.total;
     });
-
     html += `
       <div style="margin-bottom:14px;padding:10px;background:var(--panel2);border:1px solid var(--border2);border-radius:4px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -1663,7 +1683,6 @@ function renderResumen() {
     `;
   });
 
-  // ── Cables entre puntos (sin rack) ──
   const cablesIdsConRack = new Set();
   racks.forEach(rack=>{
     APP.cables.forEach((c,i)=>{
@@ -1692,7 +1711,6 @@ function renderResumen() {
     `;
   }
 
-  // ── Puntos sin ningún cable ──
   const sinCable = noRacks.filter(p => !APP.cables.some(c=>c.nombreA===p.nombre||c.nombreB===p.nombre));
   if(sinCable.length > 0) {
     html += `<div style="margin-bottom:14px;padding:8px 10px;background:rgba(255,58,92,0.06);border:1px solid rgba(255,58,92,0.2);border-radius:4px;">
@@ -1701,7 +1719,6 @@ function renderResumen() {
     </div>`;
   }
 
-  // ── Totales ──
   const totalCables = APP.cables.length;
   html += `
     <div style="padding:12px;background:rgba(255,179,0,0.06);border:1px solid var(--am);border-radius:4px;">
@@ -1775,62 +1792,20 @@ function exportarResumen() {
   }).catch(()=> alert(txt));
 }
 
-// ══════════════════════════════════════════════════
-// UTILS
-// ══════════════════════════════════════════════════
-function rumboTxt(d) {
-  return ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'][Math.round(d/22.5)%16];
-}
-
-function angleDiff(a,b) {
-  let d=a-b; while(d>180)d-=360; while(d<-180)d+=360; return d;
-}
-
-function resetPlano() {
-  if(!confirm('¿Resetear posición inercial?')) return;
-  APP.posX=0;APP.posY=0;APP.pasos=0;
-  APP.trayectoria=[{x:0,y:0,alt:APP.altBaro}];
-  dibujarPlano();
-}
-
-function resetTodo() {
-  if(!confirm('¿Reset completo? Se perderá la posición actual.')) return;
-  APP.posX=0;APP.posY=0;APP.pasos=0;APP.grabando=false;
-  APP.calListo=false;APP.calMuestras=[];
-  APP.trayectoria=[{x:0,y:0,alt:null}];
-  APP.altBase=APP.altBaro;
-  APP.umbralAlto=12.0; APP.umbralBajo=9.5;
-  document.getElementById('btnIniciar').textContent='▶ INICIAR';
-  document.getElementById('btnIniciar').classList.remove('activo');
-  document.getElementById('estadoGrab').textContent='PULSA INICIAR PARA COMENZAR';
-  document.getElementById('estadoGrab').className='estado-grab';
-  document.getElementById('calBar').style.width='0%';
-  document.getElementById('calBar').style.background='var(--am)';
-  document.getElementById('calLbl').textContent='Recogiendo muestras...';
-  document.getElementById('btnForzarCal').style.display='none';
-  document.getElementById('cardCal').style.display='none';
-  document.getElementById('badgeCal').textContent='0%';
-  dibujarPlano();
-}
-
-function guardarLS() {
-  localStorage.setItem('cnav_puntos', JSON.stringify(APP.puntos));
-  localStorage.setItem('cnav_cables', JSON.stringify(APP.cables));
-}
-
-// ══════════════════════════════════════════════════
-// DETECTOR MAGNÉTICO
-// ══════════════════════════════════════════════════
+// ============================================================
+// DETECTOR MAGNÉTICO (sin cambios, ya funciona)
+// ============================================================
 const DET = {
   activo: false,
   base: null,
   muestrasBase: [],
   historial: [],
-  MAX_H: 50,         // 5s de media a 10Hz
-  UMBRAL_WARN: 200,  // µT variación para warn
-  UMBRAL_ALERT: 400, // µT variación para alert
+  MAX_H: 50,
+  UMBRAL_WARN: 200,
+  UMBRAL_ALERT: 400,
   ultimaActualizacionUI: 0,
   INTERVALO_UI: 2000,
+  sensor: null
 };
 
 function toggleDetector() {
@@ -1847,12 +1822,6 @@ function iniciarDetector() {
   document.getElementById('btnDetector').classList.add('activo');
   document.getElementById('detEstado').textContent = 'ACTIVO';
 
-  if(typeof DeviceOrientationEvent !== 'undefined') {
-    // El magnetómetro viene en DeviceOrientationAbsolute con webkitCompassHeading
-    // pero los valores raw X/Y/Z los da la Generic Sensor API o bien los estimamos
-  }
-
-  // Usar la Generic Sensor API Magnetometer si está disponible
   if('Magnetometer' in window) {
     try {
       DET.sensor = new Magnetometer({frequency: 10});
@@ -1867,9 +1836,6 @@ function iniciarDetector() {
 }
 
 function detFallback() {
-  // Fallback: usar deviceorientation alpha/beta/gamma como proxy del campo
-  // No da µT reales pero sí variaciones
-  document.getElementById('detEstado').textContent = 'MODO ORIENTACIÓN';
   window.addEventListener('deviceorientationabsolute', onOriMag, true);
   window.addEventListener('deviceorientation', onOriMag, true);
 }
@@ -1884,8 +1850,6 @@ function onMagReading() {
 
 function onOriMag(e) {
   if(!DET.activo) return;
-  // alpha/beta/gamma no son µT pero usamos webkitCompassAccuracy como proxy
-  // En su defecto mostramos los ángulos como valores relativos
   const x = e.beta || 0;
   const y = e.gamma || 0;
   const z = e.alpha || 0;
@@ -1894,25 +1858,21 @@ function onOriMag(e) {
 }
 
 function actualizarDetector(x, y, z, total) {
-  // Suavizar con historial (siempre, independiente del UI)
   DET.historial.push(total);
   if(DET.historial.length > DET.MAX_H) DET.historial.shift();
   const suavizado = DET.historial.reduce((a,b)=>a+b)/DET.historial.length;
   const variacion = DET.base !== null ? Math.abs(suavizado - DET.base) : 0;
 
-  // Solo actualizar pantalla cada INTERVALO_UI ms
   const ahora = Date.now();
   if(ahora - DET.ultimaActualizacionUI < DET.INTERVALO_UI) return;
   DET.ultimaActualizacionUI = ahora;
 
-  // UI valores
   document.getElementById('detTotal').textContent = suavizado.toFixed(1);
   document.getElementById('detX').textContent = x.toFixed(1);
   document.getElementById('detY').textContent = y.toFixed(1);
   document.getElementById('detZ').textContent = z.toFixed(1);
   document.getElementById('detVar').textContent = DET.base!==null ? '+'+variacion.toFixed(1) : '–';
 
-  // Color y barra según variación
   const pct = Math.min(100, (variacion / 400) * 100);
   const bar = document.getElementById('detBar');
   bar.style.width = pct + '%';
@@ -1957,16 +1917,9 @@ function calibrarDetector() {
   DET.base = DET.historial.reduce((a,b)=>a+b)/DET.historial.length;
   document.getElementById('detBase').textContent = DET.base.toFixed(1);
   document.getElementById('detVar').textContent = '0.0';
-
-  // Aviso visual
-  const btn = document.getElementById('btnDetector');
   const estadoEl = document.getElementById('detEstado');
   estadoEl.textContent = '✓ BASE CALIBRADA';
-
-  // Vibración si disponible
   if(navigator.vibrate) navigator.vibrate([100, 50, 100]);
-
-  // Aviso sonoro simple (beep doble)
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     [0, 0.15].forEach(delay => {
@@ -1980,15 +1933,57 @@ function calibrarDetector() {
       osc.stop(ctx.currentTime + delay + 0.12);
     });
   } catch(e) {}
-
-  // Flash verde en el número
   document.getElementById('detTotal').style.color = 'var(--verde)';
   setTimeout(()=>{ estadoEl.textContent = 'ACTIVO · BASE OK'; }, 2000);
 }
 
-// ══════════════════════════════════════════════════
-// INIT
-// ══════════════════════════════════════════════════
+// ============================================================
+// UTILS Y RESET
+// ============================================================
+function rumboTxt(d) {
+  return ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'][Math.round(d/22.5)%16];
+}
+
+function angleDiff(a,b) {
+  let d=a-b; while(d>180)d-=360; while(d<-180)d+=360; return d;
+}
+
+function resetPlano() {
+  if(!confirm('¿Resetear posición inercial?')) return;
+  APP.posX=0;APP.posY=0;APP.pasos=0;
+  APP.trayectoria=[{x:0,y:0,alt:APP.altBaro}];
+  dibujarPlano();
+}
+
+function resetTodo() {
+  if(!confirm('¿Reset completo? Se perderá la posición actual.')) return;
+  APP.posX=0;APP.posY=0;APP.pasos=0;APP.grabando=false;
+  APP.calListo=false;APP.calMuestras=[];
+  APP.trayectoria=[{x:0,y:0,alt:null}];
+  APP.altBase=APP.altBaro;
+  APP.umbralAlto=12.0; APP.umbralBajo=9.5;
+  document.getElementById('btnIniciar').textContent='▶ INICIAR';
+  document.getElementById('btnIniciar').classList.remove('activo');
+  document.getElementById('estadoGrab').textContent='PULSA INICIAR PARA COMENZAR';
+  document.getElementById('estadoGrab').className='estado-grab';
+  document.getElementById('calBar').style.width='0%';
+  document.getElementById('calBar').style.background='var(--am)';
+  document.getElementById('calLbl').textContent='Recogiendo muestras...';
+  document.getElementById('btnForzarCal').style.display='none';
+  document.getElementById('cardCal').style.display='none';
+  document.getElementById('badgeCal').textContent='0%';
+  dibujarPlano();
+}
+
+function guardarLS() {
+  localStorage.setItem('cnav_puntos', JSON.stringify(APP.puntos));
+  localStorage.setItem('cnav_cables', JSON.stringify(APP.cables));
+  // paso calibrado ya se guarda en confirmarCalibracionPaso
+}
+
+// ============================================================
+// INICIALIZACIÓN
+// ============================================================
 window.addEventListener('resize', dibujarPlano);
 window.addEventListener('load', () => {
   setTimeout(dibujarPlano, 100);
